@@ -95,7 +95,11 @@ schedule:
 - `claude-cli`：调用本机已登录的 Claude Code，零成本；
 - `api`：任意 OpenAI 兼容接口（DeepSeek / OpenAI / SiliconFlow / OpenRouter 等）。
 
-API key 优先从环境变量读取（`QF_WIRE_API_KEY` / `LLM_API_KEY` / `OPENAI_API_KEY`，或 `digest.yaml` 指定变量名），**不要写进仓库**。
+**推荐在看板里配置**：启动 `qfw serve` 后打开左侧「AI 与生成」，填写接口地址、模型名和 API Key，点「保存配置」即可。保存后点「生成今日要点」（全部赛道或单个赛道），页面会显示逐赛道进度，完成后自动刷新，不需要改任何文件，也不需要另开终端。
+
+页面保存的内容写入 `.env.local`（与 CLI 使用同一套查找规则；设置 `QF_WIRE_ENV_FILE` 可改路径）。这个文件已被 `.gitignore` 忽略，接口只返回密钥掩码，不回显明文。页面写接口只接受本机请求（绑定 127.0.0.1，且要求 `X-Wire-Request` 头），其它网页无法跨站触发。
+
+手动配置（CLI 用户）同样有效：API key 优先从环境变量读取（`QF_WIRE_API_KEY` / `LLM_API_KEY` / `OPENAI_API_KEY`，或 `digest.yaml` 指定变量名），**不要写进仓库**。`digest.yaml` 里的 `provider`、`default_model`、`api_base` 是默认值，页面保存的配置会覆盖它们。
 
 `provider`、模型名、`api_base` 也可以直接用环境变量覆盖：
 
