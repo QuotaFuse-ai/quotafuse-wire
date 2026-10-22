@@ -240,11 +240,17 @@ def _parse_digest(raw: dict[str, Any]) -> DigestSettings:
     gateway = data.get("gateway") or {}
     if not isinstance(gateway, dict):
         raise ConfigError("digest.yaml digest.gateway 必须是对象")
+    provider_value = first_env("QF_WIRE_DIGEST_PROVIDER", "LLM_PROVIDER") or str(
+        data.get("provider") or "claude-cli"
+    )
+    # OPENAI_MODEL 只在 api 通道生效：claude-cli 不接受别家的模型名。
+    model_envs = ("QF_WIRE_DIGEST_MODEL", "LLM_MODEL", "OPENAI_MODEL")
+    if provider_value != "api":
+        model_envs = model_envs[:2]
     try:
         return DigestSettings(
-            provider=first_env("QF_WIRE_DIGEST_PROVIDER", "LLM_PROVIDER")
-            or str(data.get("provider") or "claude-cli"),
-            default_model=first_env("QF_WIRE_DIGEST_MODEL", "LLM_MODEL")
+            provider=provider_value,
+            default_model=first_env(*model_envs)
             or str(data.get("default_model") or "user-model"),
             language=str(data.get("language") or "zh"),
             max_items=int(data.get("max_items_per_topic") or 12),
