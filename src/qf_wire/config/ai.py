@@ -101,6 +101,8 @@ def save_ai_settings(
     if provider_value not in PROVIDERS:
         raise ParamError(f"provider 只支持 {', '.join(PROVIDERS)}")
     base_value = (api_base or "").strip().rstrip("/")
+    if base_value.endswith("/chat/completions"):
+        base_value = base_value[: -len("/chat/completions")].rstrip("/")
     if base_value and not urlparse(base_value).path.strip("/"):
         base_value += "/v1"
     model_value = (model or "").strip()

@@ -29,6 +29,7 @@ ENV_KEYS = (
     "LLM_BASE_URL",
     "OPENAI_API_KEY",
     "OPENAI_BASE_URL",
+    "OPENAI_MODEL",
 )
 
 
@@ -129,3 +130,18 @@ def test_save_rejects_unknown_provider(ai_env) -> None:
 
     with pytest.raises(ParamError):
         save_ai_settings(config, provider="openai", api_base="", api_key="", model="")
+
+
+def test_save_settings_strips_pasted_chat_endpoint(ai_env) -> None:
+    config, _env_file = ai_env
+
+    settings = save_ai_settings(
+        config,
+        provider="api",
+        api_base="https://ai.example.com/v1/chat/completions",
+        api_key="sk-test",
+        model="demo-model",
+    )
+
+    assert settings.api_base == "https://ai.example.com/v1"
+    assert settings.model == "demo-model"

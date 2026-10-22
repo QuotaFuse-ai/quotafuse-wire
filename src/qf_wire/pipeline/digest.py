@@ -247,7 +247,7 @@ def _post_chat(
     if model:
         body["model"] = model
     request = urllib.request.Request(
-        f"{base.rstrip('/')}/chat/completions",
+        _chat_endpoint(base),
         data=json.dumps(body).encode("utf-8"),
         headers={
             "Content-Type": "application/json",
@@ -259,13 +259,38 @@ def _post_chat(
         with urllib.request.urlopen(request, timeout=timeout_sec) as response:
             payload = json.loads(response.read().decode("utf-8", errors="replace"))
     except urllib.error.HTTPError as exc:
-        raise DigestUnavailable(f"{label} HTTP {exc.code}") from exc
+        raise DigestUnavailable(f"{label} HTTP {exc.code}{_error_detail(exc, key)}") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise DigestUnavailable(f"{label}不可达: {exc}") from exc
     try:
         return payload["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
         raise DigestUnavailable(f"{label}返回结构不符合预期") from exc
+
+
+CHAT_SUFFIX = "/chat/completions"
+
+
+def _chat_endpoint(base: str) -> str:
+    """地址里已经写了完整端点时不再重复拼接 /chat/completions。"""
+    cleaned = base.strip().rstrip("/")
+    if cleaned.endswith(CHAT_SUFFIX):
+        return cleaned
+    return f"{cleaned}{CHAT_SUFFIX}"
+
+
+def _error_detail(exc: urllib.error.HTTPError, key: str, limit: int = 160) -> str:
+    """附一小段上游原始报错用于定位；密钥一律抹掉。"""
+    try:
+        raw = exc.read(limit * 8)
+    except OSError:
+        return ""
+    text = " ".join(raw.decode("utf-8", "replace").split())
+    if key:
+        text = text.replace(key, "***")
+    if not text:
+        return ""
+    return "：" + text[:limit]
 
 
 def extract_json(text: str) -> dict[str, Any]:

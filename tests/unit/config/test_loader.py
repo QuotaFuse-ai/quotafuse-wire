@@ -40,3 +40,28 @@ def test_load_config_rejects_dangling_source(tmp_path) -> None:
 
     with pytest.raises(ConfigError):
         load_config(config_dir=config_dir)
+
+
+def test_openai_model_env_only_applies_to_api_provider(tmp_path, monkeypatch, isolated_env) -> None:
+    for name in ("QF_WIRE_DIGEST_MODEL", "LLM_MODEL", "QF_WIRE_DIGEST_PROVIDER", "LLM_PROVIDER"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("OPENAI_MODEL", "deepseek-v4.1-flash")
+
+    claude_settings = load_config(write_config(tmp_path / "claude")).digest
+    assert claude_settings.provider == "claude-cli"
+    assert claude_settings.default_model == "test-model"
+
+    api_digest = {
+        "digest": {
+            "version": 1,
+            "provider": "api",
+            "default_model": "user-model",
+            "language": "zh",
+            "topics": {
+                "default": {"prompt_file": "prompts/default.md", "output_schema": "TopicDigest"}
+            },
+        }
+    }
+    api_settings = load_config(write_config(tmp_path / "api", digest=api_digest)).digest
+    assert api_settings.provider == "api"
+    assert api_settings.default_model == "deepseek-v4.1-flash"
