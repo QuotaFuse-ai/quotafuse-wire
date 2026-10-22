@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from qf_wire.config.dotenv import first_env, load_dotenv, parse_dotenv
+from qf_wire.config.dotenv import first_env, load_dotenv, parse_dotenv, write_env_file
 
 KEYS = ("DOTENV_MODEL", "DOTENV_BASE", "DOTENV_KEY")
 
@@ -55,3 +55,33 @@ def test_first_env_skips_blank_values(monkeypatch) -> None:
 
 def test_missing_env_file_returns_none(tmp_path) -> None:
     assert load_dotenv(tmp_path / "missing.env") is None
+
+
+def test_write_env_file_merges_and_removes(tmp_path) -> None:
+    target = tmp_path / ".env.local"
+    target.write_text("# 注释保留\nOTHER=keep-me\nDOTENV_MODEL=old\n", encoding="utf-8")
+
+    write_env_file(target, {"DOTENV_MODEL": "new", "DOTENV_KEY": "sk-test", "OTHER": ""})
+
+    text = target.read_text(encoding="utf-8")
+    assert "# 注释保留" in text
+    assert "OTHER=" not in text
+    assert "DOTENV_MODEL=new" in text
+    assert "DOTENV_KEY=sk-test" in text
+    assert text.count("DOTENV_MODEL") == 1
+
+
+def test_write_env_file_round_trips_quoted_values(tmp_path) -> None:
+    target = tmp_path / ".env.local"
+
+    write_env_file(target, {"DOTENV_MODEL": "my model #1"})
+
+    assert parse_dotenv(target.read_text(encoding="utf-8"))["DOTENV_MODEL"] == "my model #1"
+
+
+def test_write_env_file_rejects_header_injection(tmp_path) -> None:
+    target = tmp_path / ".env.local"
+
+    with pytest.raises(ValueError):
+        write_env_file(target, {"DOTENV_KEY": "sk-x\nDOTENV_MODEL=evil"})
+    assert not target.exists()

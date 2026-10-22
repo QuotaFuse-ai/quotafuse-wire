@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from pathlib import Path
 
 ENV_FILENAME = ".env"
@@ -89,3 +90,51 @@ def first_env(*names: str) -> str | None:
         if value and value.strip():
             return value.strip()
     return None
+
+
+def _format_value(value: str) -> str:
+    if '"' in value or "\n" in value or "\r" in value:
+        raise ValueError("配置值不能包含双引号或换行")
+    if value != value.strip() or any(ch in value for ch in " #'"):
+        return f'"{value}"'
+    return value
+
+
+def write_env_file(path: Path | str, values: Mapping[str, str]) -> Path:
+    """把 KEY=VALUE 合并写入文件；空字符串表示删除该键，其余行原样保留。
+
+    看板里的 AI 设置写的就是本机 .env.local（.gitignore 已忽略）。
+    """
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    lines: list[str] = []
+    if target.is_file():
+        lines = target.read_text(encoding="utf-8-sig").splitlines()
+
+    pending = {key: value for key, value in values.items() if key}
+    kept: list[str] = []
+    for raw in lines:
+        stripped = raw.strip()
+        key = ""
+        if stripped and not stripped.startswith("#"):
+            candidate = stripped[len("export "):].lstrip() if stripped.startswith("export ") else stripped
+            key = candidate.partition("=")[0].strip()
+        if key and key in pending:
+            value = pending.pop(key)
+            if value:
+                kept.append(f"{key}={_format_value(value)}")
+            continue
+        kept.append(raw)
+    for key, value in pending.items():
+        if value:
+            kept.append(f"{key}={_format_value(value)}")
+
+    text = "\n".join(kept).strip("\n")
+    temporary = target.with_name(target.name + ".tmp")
+    temporary.write_text(text + "\n" if text else "", encoding="utf-8")
+    os.replace(temporary, target)
+    try:
+        target.chmod(0o600)
+    except OSError:
+        pass
+    return target
