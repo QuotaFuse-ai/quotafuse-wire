@@ -193,6 +193,31 @@
     font-size: 12.5px; line-height: 1.65; margin-bottom: 14px;
   }
 
+  .form-grid { display: grid; gap: 14px; margin: 14px 0 18px; }
+  .field { display: grid; gap: 6px; max-width: 620px; }
+  .field label { font-size: 12px; color: var(--muted); }
+  .field input, .field select {
+    width: 100%; padding: 9px 12px; border-radius: 9px;
+    border: 1px solid var(--line); background: var(--panel-2);
+    color: var(--text); outline: none; font-size: 13.5px;
+  }
+  .field input:focus, .field select:focus { border-color: var(--accent); }
+  .field .note { font-size: 11.5px; color: var(--muted); line-height: 1.6; }
+  .key-row { display: flex; gap: 8px; align-items: center; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .actions button.primary {
+    background: var(--accent); border-color: var(--accent);
+    color: #071018; font-weight: 600;
+  }
+  .actions button:disabled { opacity: .55; cursor: default; }
+  .status-line { margin-top: 12px; font-size: 12.5px; color: var(--muted); line-height: 1.7; }
+  .status-line.ok { color: var(--ok); }
+  .status-line.err { color: var(--danger); }
+  .job-results { margin: 12px 0 0; padding-left: 18px; font-size: 12.5px; color: #c9d4f2; line-height: 1.8; }
+  .empty-state .actions { margin-top: 12px; }
+  .topic-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .topic-actions button { font-size: 12.5px; padding: 6px 12px; }
+
   @media (max-width: 860px) {
     .shell { grid-template-columns: 1fr; }
     .sidebar {
@@ -277,6 +302,7 @@
     var tail = parts[1] ? decodeURIComponent(parts[1]) : "";
     if (head === "sources") return { view: "sources", topic: null };
     if (head === "notices") return { view: "notices", topic: null };
+    if (head === "settings") return { view: "settings", topic: null };
     if (head === "topic" && tail) return { view: "topic", topic: tail };
     return { view: "topic", topic: null };
   }
@@ -347,6 +373,12 @@
     notices.appendChild(el("span", null, "抓取告警"));
     notices.appendChild(el("span", "nav-count" + (info.alerts ? " warn" : ""), String(info.alerts)));
     nav.appendChild(notices);
+
+    nav.appendChild(el("div", "nav-title", "设置"));
+    var settings = el("a", "nav-item" + (state.view === "settings" ? " active" : ""));
+    settings.href = "#/settings";
+    settings.appendChild(el("span", null, "AI 与生成"));
+    nav.appendChild(settings);
   }
 
   function currentIndustryKey() {
@@ -421,18 +453,37 @@
       var hint = el("div", "empty-state");
       hint.appendChild(el("strong", null, "今日要点尚未生成。"));
       hint.appendChild(document.createTextNode(
-        "它由你自己配置的大模型阅读当日资讯后提炼，不是抓取得到的。在仓库根目录的 .env 里填好 QF_WIRE_API_BASE 和 QF_WIRE_API_KEY，"
-        + "并在 config/digest.yaml 里设置 provider 与 default_model，然后运行 "
+        "它由你自己配置的大模型阅读当日资讯后提炼，不是抓取得到的。填一次模型地址、模型名和密钥，就能在页面里直接生成，不用改配置文件，也不用另开终端。"
       ));
-      hint.appendChild(el("code", null, "qfw digest --topic " + (industry.id || industry.key)));
-      hint.appendChild(document.createTextNode(" 即可生成。"));
+      var hintActions = el("div", "actions");
+      var startButton = el("button", "primary", "生成今日要点");
+      startButton.type = "button";
+      startButton.addEventListener("click", function () {
+        startTopicDigest(industry.id || industry.key, startButton);
+      });
+      hintActions.appendChild(startButton);
+      var settingsLink = el("a", "nav-item", "模型设置");
+      settingsLink.href = "#/settings";
+      settingsLink.style.padding = "7px 12px";
+      hintActions.appendChild(settingsLink);
+      hint.appendChild(hintActions);
       panel.appendChild(hint);
       main.appendChild(panel);
       return;
     }
 
     if (!summary && !keyPoints.length) {
-      panel.appendChild(el("div", "empty-state", "本次提炼没有返回内容，可稍后重新运行 qfw digest。"));
+      var retry = el("div", "empty-state");
+      retry.appendChild(document.createTextNode("本次提炼没有返回内容，可以重新生成一次。"));
+      var retryActions = el("div", "actions");
+      var retryButton = el("button", "primary", "重新生成");
+      retryButton.type = "button";
+      retryButton.addEventListener("click", function () {
+        startTopicDigest(industry.id || industry.key, retryButton);
+      });
+      retryActions.appendChild(retryButton);
+      retry.appendChild(retryActions);
+      panel.appendChild(retry);
       main.appendChild(panel);
       return;
     }
@@ -442,7 +493,7 @@
     if (summary) text.appendChild(el("p", "digest-summary", summary));
     if (state === "partial") {
       var reason = industry.digest_error ? "本次提炼失败：" + industry.digest_error : "本次提炼未能完整完成，以下为已采集资讯。";
-      text.appendChild(el("p", "digest-warn", reason + " 检查模型地址与密钥后重新运行 qfw digest。"));
+      text.appendChild(el("p", "digest-warn", reason + " 到「AI 与生成」检查模型地址与密钥后重新生成即可。"));
     }
     body.appendChild(text);
 
@@ -661,6 +712,278 @@
     main.appendChild(panel);
   }
 
+  var pollTimer = null;
+  var flashMessage = "";
+  var lastDoneJob = "";
+
+  function stopPolling() {
+    if (pollTimer !== null) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function apiRequest(url, method, payload) {
+    var options = { method: method || "GET", headers: { "X-Wire-Request": "1" } };
+    if (payload !== undefined) {
+      options.headers["Content-Type"] = "application/json";
+      options.body = JSON.stringify(payload);
+    }
+    return fetch(url, options).then(function (response) {
+      return response.text().then(function (text) {
+        var body = {};
+        try { body = text ? JSON.parse(text) : {}; } catch (err) { body = {}; }
+        if (!response.ok) {
+          var error = new Error(body.error || ("请求失败（HTTP " + response.status + "）"));
+          error.status = response.status;
+          throw error;
+        }
+        return body;
+      });
+    });
+  }
+
+  function topicName(topicId) {
+    var industry = findIndustry(topicId);
+    return industry ? (industry.name || industry.key) : topicId;
+  }
+
+  function refreshTopicButtons() {
+    var holder = document.getElementById("topic-actions");
+    if (!holder) return;
+    holder.textContent = "";
+    (data.industries || []).forEach(function (industry) {
+      var button = el("button", null, "只生成 " + (industry.name || industry.key));
+      button.type = "button";
+      button.addEventListener("click", function () {
+        startTopicDigest(industry.id || industry.key, button);
+      });
+      holder.appendChild(button);
+    });
+    holder.style.display = holder.childNodes.length ? "" : "none";
+  }
+
+  function startTopicDigest(topicId, button) {
+    var original = button ? button.textContent : "";
+    if (button) {
+      button.disabled = true;
+      button.textContent = "正在开始…";
+    }
+    apiRequest("/api/digest/run", "POST", { topic: topicId || "" }).then(function () {
+      if (button) button.textContent = "已开始";
+      if (location.hash === "#/settings") render();
+      else location.hash = "#/settings";
+    }).catch(function (error) {
+      if (button) {
+        button.disabled = false;
+        button.textContent = original;
+      }
+      flashMessage = error.message;
+      if (location.hash === "#/settings") render();
+      else location.hash = "#/settings";
+    });
+  }
+
+  function renderSettings(main) {
+    main.appendChild(viewHead("AI 与生成", "在这里填一次，之后点按钮就能生成，不用改配置文件或另开终端"));
+
+    if (flashMessage) {
+      var flash = el("div", "hint", flashMessage);
+      flash.style.borderColor = "rgba(248, 113, 113, .4)";
+      flash.style.background = "rgba(248, 113, 113, .08)";
+      flash.style.color = "#fecaca";
+      main.appendChild(flash);
+      flashMessage = "";
+    }
+
+    var panel = el("section", "panel");
+    var head = el("div", "panel-head");
+    head.appendChild(el("h3", null, "模型配置"));
+    var note = el("span", "panel-note", "保存在本机 .env.local · 已被 git 忽略 · 密钥不回显");
+    head.appendChild(note);
+    panel.appendChild(head);
+
+    var form = el("div", "form-grid");
+
+    var providerField = el("div", "field");
+    providerField.appendChild(el("label", null, "接入方式"));
+    var providerSelect = document.createElement("select");
+    [["api", "API（OpenAI 兼容接口，填写地址 / 模型 / 密钥）"], ["claude-cli", "本机 Claude CLI（无需密钥）"]].forEach(function (pair) {
+      var option = document.createElement("option");
+      option.value = pair[0];
+      option.textContent = pair[1];
+      providerSelect.appendChild(option);
+    });
+    providerField.appendChild(providerSelect);
+    form.appendChild(providerField);
+
+    var baseField = el("div", "field");
+    baseField.appendChild(el("label", null, "接口地址"));
+    var baseInput = document.createElement("input");
+    baseInput.type = "url";
+    baseInput.placeholder = "https://api.openai.com/v1";
+    baseInput.spellcheck = false;
+    baseField.appendChild(baseInput);
+    baseField.appendChild(el("div", "note", "填到域名即可，会自动补 /v1；也可以直接粘贴带路径的网关地址。"));
+    form.appendChild(baseField);
+
+    var modelField = el("div", "field");
+    modelField.appendChild(el("label", null, "模型名"));
+    var modelInput = document.createElement("input");
+    modelInput.type = "text";
+    modelInput.placeholder = "例如 gpt-4o-mini";
+    modelInput.spellcheck = false;
+    modelField.appendChild(modelInput);
+    form.appendChild(modelField);
+
+    var keyField = el("div", "field");
+    keyField.appendChild(el("label", null, "API Key"));
+    var keyInput = document.createElement("input");
+    keyInput.type = "password";
+    keyInput.autocomplete = "off";
+    keyField.appendChild(keyInput);
+    keyField.appendChild(el("div", "note", "只写到本机 .env.local，不会提交到仓库，也不会在页面上回显。"));
+    form.appendChild(keyField);
+
+    var actions = el("div", "actions");
+    var saveButton = el("button", "primary", "保存配置");
+    saveButton.type = "button";
+    var status = el("span", "status-line");
+    actions.appendChild(saveButton);
+    actions.appendChild(status);
+    form.appendChild(actions);
+
+    panel.appendChild(form);
+    main.appendChild(panel);
+
+    var generatePanel = el("section", "panel");
+    var genHead = el("div", "panel-head");
+    genHead.appendChild(el("h3", null, "生成今日要点"));
+    genHead.appendChild(el("span", "panel-note", "逐个赛道调用模型，完成后看板自动刷新"));
+    generatePanel.appendChild(genHead);
+
+    var genActions = el("div", "actions");
+    var allButton = el("button", "primary", "生成全部赛道");
+    allButton.type = "button";
+    genActions.appendChild(allButton);
+    generatePanel.appendChild(genActions);
+
+    var jobLine = el("div", "status-line");
+    generatePanel.appendChild(jobLine);
+    var results = el("ul", "job-results");
+    generatePanel.appendChild(results);
+
+    var topicActions = el("div", "topic-actions");
+    topicActions.id = "topic-actions";
+    generatePanel.appendChild(topicActions);
+    main.appendChild(generatePanel);
+    refreshTopicButtons();
+
+    function syncProvider() {
+      var isApi = providerSelect.value !== "claude-cli";
+      [baseInput, modelInput, keyInput].forEach(function (input) { input.disabled = !isApi; });
+      note.textContent = isApi
+        ? "保存在本机 .env.local · 已被 git 忽略 · 密钥不回显"
+        : "使用本机已登录的 Claude CLI，不需要地址与密钥";
+    }
+
+    function setStatus(text, kind) {
+      status.textContent = text || "";
+      status.className = "status-line" + (kind ? " " + kind : "");
+    }
+
+    function applySettings(settings) {
+      providerSelect.value = settings.provider === "claude-cli" ? "claude-cli" : "api";
+      baseInput.value = settings.apiBase || "";
+      modelInput.value = settings.model || "";
+      keyInput.value = "";
+      keyInput.placeholder = settings.hasKey
+        ? "已保存 " + settings.keyHint + "（留空则不修改）"
+        : "粘贴你的 API Key";
+      syncProvider();
+      if (settings.configured) {
+        setStatus("已就绪，可以生成今日要点。", "ok");
+      } else {
+        setStatus("还差配置：填好上面的项目后保存。", "err");
+      }
+    }
+
+    function renderJob(job) {
+      var total = job.total || 0;
+      var done = job.done || 0;
+      if (job.state === "running") {
+        jobLine.className = "status-line";
+        jobLine.textContent = "生成中 " + done + "/" + total
+          + (job.current ? " · 正在处理 " + topicName(job.current) : "");
+        allButton.disabled = true;
+      } else if (job.state === "done") {
+        jobLine.className = "status-line ok";
+        jobLine.textContent = "已完成 " + done + "/" + total + "，看板已刷新。";
+        allButton.disabled = false;
+        if (job.id && job.id !== lastDoneJob) {
+          lastDoneJob = job.id;
+          load();
+        }
+      } else if (job.state === "error") {
+        jobLine.className = "status-line err";
+        jobLine.textContent = "生成失败：" + (job.error || "未知错误");
+        allButton.disabled = false;
+      } else {
+        jobLine.className = "status-line";
+        jobLine.textContent = "还没有运行过生成任务。";
+        allButton.disabled = false;
+      }
+
+      results.textContent = "";
+      var map = job.results || {};
+      var labels = { ok: "完成", partial: "部分完成", skipped: "已跳过", failed: "失败" };
+      Object.keys(map).forEach(function (key) {
+        var entry = map[key] || {};
+        var text = topicName(key) + "：" + (labels[entry.status] || "完成");
+        if (entry.error) text += " · " + entry.error;
+        results.appendChild(el("li", null, text));
+      });
+    }
+
+    function refreshJob() {
+      apiRequest("/api/digest/job").then(function (body) {
+        var job = body.job || {};
+        renderJob(job);
+        if (job.state !== "running") stopPolling();
+      }).catch(function () {
+        stopPolling();
+      });
+    }
+
+    providerSelect.addEventListener("change", syncProvider);
+    saveButton.addEventListener("click", function () {
+      saveButton.disabled = true;
+      setStatus("正在保存…", "");
+      apiRequest("/api/settings", "POST", {
+        provider: providerSelect.value,
+        apiBase: baseInput.value,
+        model: modelInput.value,
+        apiKey: keyInput.value
+      }).then(function (result) {
+        applySettings(result);
+        setStatus("已保存到 " + result.envFile + "，可以生成今日要点了。", "ok");
+      }).catch(function (error) {
+        setStatus(error.message, "err");
+      }).then(function () {
+        saveButton.disabled = false;
+      });
+    });
+    allButton.addEventListener("click", function () {
+      startTopicDigest("", allButton);
+    });
+
+    apiRequest("/api/settings").then(applySettings).catch(function (error) {
+      setStatus("读取配置失败：" + error.message, "err");
+    });
+    refreshJob();
+    if (pollTimer === null) pollTimer = setInterval(refreshJob, 2000);
+  }
+
   function render() {
     renderChrome();
     renderNav();
@@ -670,6 +993,8 @@
       renderSources(main);
     } else if (state.view === "notices") {
       renderNotices(main);
+    } else if (state.view === "settings") {
+      renderSettings(main);
     } else {
       renderTopic(main);
     }
@@ -680,6 +1005,7 @@
     state.view = route.view;
     if (route.topic) state.topic = route.topic;
     if (state.view !== "topic") state.query = "";
+    if (state.view !== "settings") stopPolling();
     document.getElementById("search").value = state.query;
     render();
   }
@@ -695,7 +1021,12 @@
       if (data.industries && data.industries.length && !findIndustry(state.topic)) {
         state.topic = data.industries[0].key;
       }
-      render();
+      // 设置页有正在编辑的表单，刷新数据时只更新赛道按钮，避免清空输入
+      if (state.view === "settings") {
+        refreshTopicButtons();
+      } else {
+        render();
+      }
     };
     script.onerror = function () {
       var main = document.getElementById("view");
