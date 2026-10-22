@@ -11,6 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 SourceType = Literal["rss", "html", "api"]
 SourceStatus = Literal["ok", "degraded", "unavailable"]
+EnvelopeDomain = Literal["news", "policy", "industry"]
+EnvelopeSourceStatus = Literal["ok", "degraded", "partial"]
 Freshness = Literal["realtime", "cached", "archive"]
 Confidence = Literal["high", "medium", "low"]
 DigestStatus = Literal["ok", "partial", "skipped", "failed"]
@@ -137,11 +139,15 @@ class Event(BaseModel):
 
 
 class WireEnvelope(BaseModel):
-    """与 Council DataEnvelope 对齐的 12 字段信封。"""
+    """与 Council DataEnvelope 对齐的信封。
+
+    字段与 `docs/PROVIDER_INTEGRATION.md` 的映射表一一对应；枚举越界直接拒绝。
+    `topic` 允许空串，表示跨赛道聚合结果（如全量信源列表）。
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    domain: Literal["news", "policy", "industry"]
+    domain: EnvelopeDomain
     topic: str
     event_id: str | None = None
     data_as_of: date
@@ -151,7 +157,7 @@ class WireEnvelope(BaseModel):
     fetched_at: datetime
     freshness: Freshness = "realtime"
     confidence: Confidence = "medium"
-    source_status: SourceStatus = "ok"
+    source_status: EnvelopeSourceStatus = "ok"
 
     @field_validator("fetched_at")
     @classmethod

@@ -86,7 +86,7 @@ stdio 模式下 **stdout 只输出 MCP 协议报文**，所有日志走 stderr�
 ```
 
 - `payload` 为 `{"event": {...}, "timeline": [{published_at, source, title, url, zh}]}`，按时间升序。
-- 事件不存在时返回 `isError: true` 并给出可读原因。
+- 事件不存在时返回空 `payload`、`freshness = archive`，不抛异常（与 Provider 的无数据约定一致）；只有参数缺失或格式错误才返回 `isError: true`。
 - `freshness = archive`。
 
 ## wire_list_sources

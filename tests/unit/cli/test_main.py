@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from qf_wire.cli.main import cli
-from qf_wire.core.errors import EXIT_CONFIG, EXIT_OK, EXIT_PARAM
+from qf_wire.core.errors import EXIT_OK, EXIT_PARAM
 
 
 def test_version_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
@@ -24,6 +24,8 @@ def test_unknown_topic_is_parameter_error() -> None:
     assert cli(["run", "--sources-only", "--topic", "nope"]) == EXIT_PARAM
 
 
-def test_mcp_placeholder_exits_config(capsys: pytest.CaptureFixture[str]) -> None:
-    assert cli(["mcp"]) == EXIT_CONFIG
-    assert "M2" in capsys.readouterr().err
+def test_mcp_without_transport_lists_subcommands(capsys: pytest.CaptureFixture[str]) -> None:
+    assert cli(["mcp"]) == EXIT_PARAM
+    out = capsys.readouterr().out
+    assert "stdio" in out
+    assert "http" in out
