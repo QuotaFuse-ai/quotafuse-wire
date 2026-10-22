@@ -111,6 +111,7 @@ def _project_item(
         "ts": to_timestamp_ms(item.published_at),
         "summary": enrichment.get("summary") or item.summary,
         "source": item.source_id or ",".join(item.sources),
+        "sources": item.sources or ([item.source_id] if item.source_id else []),
         "zh": enrichment.get("zh") or item.zh,
         "event_id": item.event_id,
         "source_count": source_count.get(item.event_id, len(item.sources) or 1),

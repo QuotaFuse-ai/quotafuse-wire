@@ -12,11 +12,13 @@ HISTORY_COLUMNS = [
     ("date", "日期"),
     ("items", "条目"),
     ("events", "事件"),
+    ("multi_source", "多源事件"),
     ("digests", "提炼"),
     ("source_ok", "源可用"),
     ("source_degraded", "源降级"),
     ("source_unavailable", "源不可用"),
     ("item_delta", "条目增量"),
+    ("event_delta", "事件增量"),
     ("digest_delta", "提炼增量"),
 ]
 
@@ -46,8 +48,10 @@ def history_command(
     totals = {
         "items": sum(row["items"] for row in rows),
         "events": sum(row["events"] for row in rows),
+        "multi_source": sum(row["multi_source"] for row in rows),
         "digests": sum(row["digests"] for row in rows),
         "item_delta": sum(row["item_delta"] for row in rows),
+        "event_delta": sum(row["event_delta"] for row in rows),
         "digest_delta": sum(row["digest_delta"] for row in rows),
     }
     payload: dict[str, Any] = {
@@ -69,7 +73,10 @@ def history_command(
                 "截止日期": target_day.isoformat(),
                 "天数": days,
                 "条目合计": totals["items"],
+                "事件合计": totals["events"],
+                "多源事件": totals["multi_source"],
                 "条目增量": totals["item_delta"],
+                "事件增量": totals["event_delta"],
             },
             "table",
         )

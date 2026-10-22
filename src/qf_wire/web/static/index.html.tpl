@@ -95,6 +95,21 @@
   }
   .badge.high { color: var(--ok); border-color: rgba(52, 211, 153, .4); }
   .badge.low { color: var(--warn); border-color: rgba(245, 158, 11, .4); }
+  .badge.medium { color: var(--muted); }
+  .badge.multi { color: var(--accent); border-color: rgba(34, 211, 238, .45); }
+  .badge.score-low { color: var(--danger); border-color: rgba(248, 113, 113, .45); }
+  .badge.score-mid { color: var(--warn); border-color: rgba(245, 158, 11, .4); }
+  .badge.score-high { color: var(--ok); border-color: rgba(52, 211, 153, .4); }
+  .timeline {
+    margin-top: 10px; padding: 10px 12px; border-left: 2px solid var(--line);
+    display: grid; gap: 8px; font-size: 12.5px;
+  }
+  .timeline .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: baseline; }
+  .timeline .time { color: var(--muted); min-width: 96px; }
+  .timeline .row a { color: #c9d4f2; text-decoration: none; }
+  .timeline .row a:hover { color: var(--accent); }
+  .item details { margin-top: 10px; }
+  .item details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
   .empty { color: var(--muted); text-align: center; padding: 48px 0; font-size: 14px; }
   details.source-panel summary { cursor: pointer; color: var(--muted); font-size: 13px; }
   table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12.5px; }
@@ -129,7 +144,7 @@
   <details class="panel source-panel" id="source-panel" hidden>
     <summary>信源状态</summary>
     <table>
-      <thead><tr><th>信源</th><th>赛道</th><th>状态</th><th>条目</th><th>尝试</th><th>错误</th></tr></thead>
+      <thead><tr><th>信源</th><th>赛道</th><th>状态</th><th>评分</th><th>条目</th><th>尝试</th><th>错误</th></tr></thead>
       <tbody id="source-body"></tbody>
     </table>
   </details>
@@ -197,8 +212,61 @@
     panel.hidden = false;
     digest.textContent = summary;
     keyPoints.forEach(function (point) {
-      points.appendChild(el("li", "", point.text || ""));
+      var li = el("li", "", point.text || "");
+      var confidence = point.confidence || "medium";
+      li.appendChild(document.createTextNode(" "));
+      li.appendChild(el("span", "badge " + confidence, confidence));
+      points.appendChild(li);
     });
+  }
+
+  function scoreOf(sourceId) {
+    var scores = data.sourceScores || {};
+    return scores[sourceId] ? scores[sourceId].score : null;
+  }
+
+  function scoreClass(value) {
+    if (value >= 0.6) return "status-ok";
+    if (value >= 0.45) return "status-degraded";
+    return "status-unavailable";
+  }
+
+  function reportKey(item) {
+    return item.event_id ? "event:" + item.event_id : "item:" + (item.url || item.title);
+  }
+
+  function groupReports(items) {
+    var groups = [];
+    var index = {};
+    items.forEach(function (item) {
+      var key = reportKey(item);
+      if (index[key] !== undefined) {
+        groups[index[key]].reports.push(item);
+        return;
+      }
+      index[key] = groups.length;
+      groups.push({ lead: item, reports: [item] });
+    });
+    return groups;
+  }
+
+  function renderTimeline(group) {
+    var wrap = el("div", "timeline");
+    var reports = group.reports.slice().sort(function (a, b) {
+      return (a.ts || 0) - (b.ts || 0);
+    });
+    reports.forEach(function (report) {
+      var row = el("div", "row");
+      row.appendChild(el("span", "time", report.time || "时间未知"));
+      row.appendChild(el("span", "badge", report.source || "未知信源"));
+      var link = el("a", null, report.zh || report.title || "(无标题)");
+      link.href = report.url || "#";
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      row.appendChild(link);
+      wrap.appendChild(row);
+    });
+    return wrap;
   }
 
   function renderItems(industry) {
@@ -209,7 +277,8 @@
       wrap.appendChild(el("div", "empty", state.query ? "没有匹配的资讯" : "该赛道今日暂无资讯"));
       return;
     }
-    items.forEach(function (item) {
+    groupReports(items).forEach(function (group) {
+      var item = group.lead;
       var card = el("article", "item");
       var head = el("div", "head");
       var title = el("h3");
@@ -222,10 +291,29 @@
 
       var badges = el("div", "badges");
       if (item.time) badges.appendChild(el("span", "badge", item.time));
-      if (item.source) badges.appendChild(el("span", "badge", item.source));
+      if (item.source) {
+        var score = scoreOf(item.source);
+        var sourceBadge = el("span", "badge", item.source);
+        if (score !== null && score !== undefined) {
+          sourceBadge.textContent = item.source + " · 评分 " + score.toFixed(2);
+          sourceBadge.className = "badge " + (score < 0.45 ? "score-low" : (score < 0.6 ? "score-mid" : "score-high"));
+        }
+        badges.appendChild(sourceBadge);
+      }
       var confidence = item.confidence || "medium";
       badges.appendChild(el("span", "badge " + confidence, "置信 " + confidence));
-      if (item.source_count > 1) badges.appendChild(el("span", "badge high", item.source_count + " 源"));
+
+      var seen = {};
+      group.reports.forEach(function (report) {
+        var sources = report.sources && report.sources.length ? report.sources : [report.source];
+        sources.forEach(function (source) { if (source) seen[source] = true; });
+      });
+      var distinct = Object.keys(seen).length;
+      if (distinct > 1) {
+        badges.appendChild(el("span", "badge multi", "多源 " + distinct));
+      } else if ((item.source_count || 1) > 1) {
+        badges.appendChild(el("span", "badge multi", "多源 " + item.source_count));
+      }
       head.appendChild(badges);
       card.appendChild(head);
 
@@ -233,10 +321,11 @@
         card.appendChild(el("div", "orig", item.title));
       }
       if (item.summary) card.appendChild(el("div", "summary", item.summary));
-      if (item.event_id) {
-        var ev = el("div", "badges");
-        ev.appendChild(el("span", "badge", "event " + item.event_id));
-        card.appendChild(ev);
+      if (group.reports.length > 1) {
+        var details = document.createElement("details");
+        details.appendChild(el("summary", null, "事件时间线 · " + group.reports.length + " 篇报道"));
+        details.appendChild(renderTimeline(group));
+        card.appendChild(details);
       }
       wrap.appendChild(card);
     });
@@ -262,6 +351,14 @@
       tr.appendChild(el("td", "", row.name || row.id));
       tr.appendChild(el("td", "", row.topic || ""));
       tr.appendChild(el("td", "status-" + (row.status || ""), row.status || ""));
+      var score = scoreOf(row.id);
+      tr.appendChild(
+        el(
+          "td",
+          score === null ? "" : scoreClass(score),
+          score === null ? "—" : score.toFixed(2)
+        )
+      );
       tr.appendChild(el("td", "", row.itemCount === undefined ? "" : row.itemCount));
       tr.appendChild(el("td", "", row.attempts === undefined ? "" : row.attempts));
       tr.appendChild(el("td", "", row.error || ""));

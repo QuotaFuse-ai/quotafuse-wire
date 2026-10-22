@@ -45,9 +45,12 @@ class _AnchorParser(HTMLParser):
 
 class HTMLAdapter(SourceAdapter):
     source_type = "html"
+    accept = "text/html, */*"
 
     def fetch(self, timeout_sec: float | None = None) -> list[SourceItem]:
-        raw = self._get(timeout_sec=timeout_sec, accept="text/html, */*")
+        return self.parse(self._get(timeout_sec=timeout_sec, accept=self.accept))
+
+    def parse(self, raw: bytes) -> list[SourceItem]:
         text = self._decode(raw)
         if not text.strip():
             raise SourceError("空响应")

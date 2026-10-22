@@ -26,9 +26,14 @@ class SourceTimeout(SourceError):
 
 
 class SourceAdapter(ABC):
-    """所有信源适配器的基类。"""
+    """所有信源适配器的基类。
+
+    网络层与解析层分离：`fetch()` 供同步路径使用；异步采集由 fetch 管道
+    通过 aiohttp 拉取字节后调用 `parse()`，避免重复实现网络代码。
+    """
 
     source_type: ClassVar[str] = "base"
+    accept: ClassVar[str] = "*/*"
 
     def __init__(self, source: Source) -> None:
         self.source = source
@@ -36,6 +41,10 @@ class SourceAdapter(ABC):
     @abstractmethod
     def fetch(self, timeout_sec: float | None = None) -> list[SourceItem]:
         """拉取并解析条目；失败时抛出 SourceError。"""
+
+    def parse(self, raw: bytes) -> list[SourceItem]:
+        """解析已下载的响应体；供异步采集复用。"""
+        raise SourceError(f"适配器 {type(self).__name__} 未实现 parse()，无法用于异步采集")
 
     def _timeout(self, timeout_sec: float | None) -> float:
         return float(timeout_sec or self.source.timeout_sec)

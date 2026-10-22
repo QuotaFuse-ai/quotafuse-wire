@@ -15,7 +15,7 @@ from qf_wire import __version__
 from qf_wire.cli.config import config_app
 from qf_wire.cli.context import OUTPUT_FORMATS, AppContext
 from qf_wire.cli.digest import digest_command
-from qf_wire.cli.event import event_command
+from qf_wire.cli.event import event_app
 from qf_wire.cli.history import history_command
 from qf_wire.cli.mcp import mcp_command
 from qf_wire.cli.run import run_command
@@ -37,6 +37,7 @@ app = typer.Typer(
 app.add_typer(sources_app, name="sources")
 app.add_typer(topics_app, name="topics")
 app.add_typer(config_app, name="config")
+app.add_typer(event_app, name="event")
 
 
 @app.callback(invoke_without_command=True)
@@ -77,7 +78,6 @@ app.command("run")(run_command)
 app.command("digest")(digest_command)
 app.command("serve")(serve_command)
 app.command("history")(history_command)
-app.command("event")(event_command)
 app.command("mcp")(mcp_command)
 
 

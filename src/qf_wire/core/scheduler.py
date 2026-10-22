@@ -13,10 +13,17 @@ from qf_wire.config.loader import WireConfig
 from qf_wire.core.cleaner import BEIJING_TZ
 from qf_wire.core.errors import EXIT_OK, EXIT_PARTIAL, EXIT_UNAVAILABLE
 from qf_wire.core.models import Event, Source, SourceItem, Topic, TopicDigest
+from qf_wire.core.scorer import (
+    LOW_SCORE_THRESHOLD,
+    SourceScore,
+    apply_to_digest,
+    score_map,
+    update_scores,
+)
 from qf_wire.logging.setup import get_logger
 from qf_wire.pipeline.archive import archive_day
 from qf_wire.pipeline.digest import digest_topic
-from qf_wire.pipeline.fetch import fetch_many
+from qf_wire.pipeline.fetch import fetch_many, resolve_concurrency
 from qf_wire.pipeline.process import process_items, sort_items
 from qf_wire.pipeline.render import build_dashboard_payload, write_data_js
 from qf_wire.sources.base import FetchResult
@@ -30,7 +37,7 @@ class RunOptions:
     topics: list[Topic]
     sources_only: bool = False
     day: date | None = None
-    max_workers: int = 12
+    max_workers: int | None = None
     render: bool = True
     archive: bool = True
     persist: bool = True
@@ -48,6 +55,7 @@ class RunResult:
     items_by_topic: dict[str, list[SourceItem]] = field(default_factory=dict)
     events_by_topic: dict[str, list[Event]] = field(default_factory=dict)
     digests: dict[str, TopicDigest] = field(default_factory=dict)
+    scores: dict[str, SourceScore] = field(default_factory=dict)
     data_js: Path | None = None
     archive_dir: Path | None = None
 
@@ -71,6 +79,15 @@ class RunResult:
             "sources_ok": sum(1 for item in self.sources if item.status == "ok"),
             "sources_degraded": sum(1 for item in self.sources if item.status == "degraded"),
             "sources_unavailable": len(self.unavailable_sources),
+            "fetch_concurrency": resolve_concurrency(),
+            "source_scores": {
+                "scored": len(self.scores),
+                "low": sorted(
+                    source_id
+                    for source_id, item in self.scores.items()
+                    if item.score < LOW_SCORE_THRESHOLD
+                ),
+            },
             "digests": {
                 topic: {"status": digest.status, "fallback": digest.fallback}
                 for topic, digest in self.digests.items()
@@ -132,17 +149,25 @@ def run(config: WireConfig, options: RunOptions) -> RunResult:
             sum(1 for result in topic_results if result.status == "unavailable"),
         )
 
-    digests: dict[str, TopicDigest] = {}
-    if not options.sources_only:
-        for topic in selected_topics:
-            digests[topic.id] = digest_topic(topic, day, items_by_topic.get(topic.id, []), config)
-
-    exit_code = _exit_code(results)
-    status = _run_status(results, digests)
-    finished_at = datetime.now(timezone.utc)
-
     store = WireStore(config.paths.db_path)
     try:
+        previous_scores = store.load_source_scores()
+        scores = update_scores(sources, events_by_topic, previous_scores) if sources else {}
+        weights = score_map({**previous_scores, **scores})
+
+        digests: dict[str, TopicDigest] = {}
+        if not options.sources_only:
+            for topic in selected_topics:
+                digest = digest_topic(topic, day, items_by_topic.get(topic.id, []), config)
+                downgraded = apply_to_digest(digest, weights)
+                if downgraded:
+                    logger.info("赛道 %s：%d 条要点因低分信源降级", topic.id, downgraded)
+                digests[topic.id] = digest
+
+        exit_code = _exit_code(results)
+        status = _run_status(results, digests)
+        finished_at = datetime.now(timezone.utc)
+
         if options.persist:
             store.record_run(
                 run_id=run_id,
@@ -157,6 +182,7 @@ def run(config: WireConfig, options: RunOptions) -> RunResult:
                 items_by_topic=items_by_topic,
                 events_by_topic=events_by_topic,
                 digests=digests.values(),
+                source_scores=scores,
             )
         archive_path = (
             archive_day(
@@ -187,6 +213,7 @@ def run(config: WireConfig, options: RunOptions) -> RunResult:
         items_by_topic=items_by_topic,
         events_by_topic=events_by_topic,
         digests=digests,
+        scores=scores,
         data_js=data_js,
         archive_dir=archive_path,
     )
@@ -259,6 +286,16 @@ def _render_from_store(config: WireConfig, store: WireStore, day: date) -> Path:
         payload["sourceNotice"] = [
             f"{row['source_name'] or row['source_id']}：该源今日不可用" for row in unavailable
         ]
+    payload["sourceScores"] = {
+        item["source_id"]: {
+            "score": item["score"],
+            "accuracy": item["accuracy"],
+            "timeliness": item["timeliness"],
+            "uniqueness": item["uniqueness"],
+            "items": item["items"],
+        }
+        for item in store.source_scores()
+    }
     return write_data_js(config.paths.data_js, payload)
 
 
@@ -271,10 +308,12 @@ def digest_day(
 ) -> dict[str, TopicDigest]:
     """对历史某天的已归档数据重新提炼。"""
     items_by_topic = store.items_for_day(day)
+    weights = score_map(store.load_source_scores())
     digests: dict[str, TopicDigest] = {}
     for topic in topics:
         items = sort_items(items_by_topic.get(topic.id, []))
         digest = digest_topic(topic, day, items, config)
+        apply_to_digest(digest, weights)
         store.save_digest(digest)
         digests[topic.id] = digest
         logger.info("赛道 %s 于 %s 重新提炼：%s", topic.id, day, digest.status)

@@ -22,6 +22,7 @@ from qf_wire.core.models import (
     SourceItem,
     TopicDigest,
 )
+from qf_wire.core.scorer import SourceScore
 from qf_wire.logging.setup import get_logger
 from qf_wire.sources.base import FetchResult
 
@@ -138,6 +139,7 @@ class WireStore:
         items_by_topic: dict[str, list[SourceItem]],
         events_by_topic: dict[str, list[Event]],
         digests: Iterable[TopicDigest] = (),
+        source_scores: dict[str, SourceScore] | None = None,
     ) -> None:
         self.initialize()
         day_text = _day(day)
@@ -260,10 +262,54 @@ class WireStore:
             for digest in digests:
                 self._save_digest(conn, digest)
 
+            if source_scores:
+                self._save_source_scores(conn, source_scores)
+
     def save_digest(self, digest: TopicDigest) -> None:
         self.initialize()
         with self.engine.begin() as conn:
             self._save_digest(conn, digest)
+
+    def save_source_scores(self, scores: dict[str, SourceScore]) -> None:
+        """增量写入信源累计统计与得分（每个信源一行）。"""
+        if not scores:
+            return
+        self.initialize()
+        with self.engine.begin() as conn:
+            self._save_source_scores(conn, scores)
+
+    @staticmethod
+    def _save_source_scores(conn: Any, scores: dict[str, SourceScore]) -> None:
+        for item in scores.values():
+            conn.execute(
+                text(
+                    "INSERT INTO source_scores (source_id, runs, items, corroborated, exclusive, "
+                    "timeliness_sum, timeliness_samples, accuracy, timeliness, uniqueness, score, "
+                    "updated_at) VALUES "
+                    "(:source_id, :runs, :items, :corroborated, :exclusive, :timeliness_sum, "
+                    ":timeliness_samples, :accuracy, :timeliness, :uniqueness, :score, :updated_at) "
+                    "ON CONFLICT(source_id) DO UPDATE SET runs=excluded.runs, items=excluded.items, "
+                    "corroborated=excluded.corroborated, exclusive=excluded.exclusive, "
+                    "timeliness_sum=excluded.timeliness_sum, "
+                    "timeliness_samples=excluded.timeliness_samples, accuracy=excluded.accuracy, "
+                    "timeliness=excluded.timeliness, uniqueness=excluded.uniqueness, "
+                    "score=excluded.score, updated_at=excluded.updated_at"
+                ),
+                {
+                    "source_id": item.source_id,
+                    "runs": item.runs,
+                    "items": item.items,
+                    "corroborated": item.corroborated,
+                    "exclusive": item.exclusive,
+                    "timeliness_sum": item.timeliness_sum,
+                    "timeliness_samples": item.timeliness_samples,
+                    "accuracy": item.accuracy,
+                    "timeliness": item.timeliness,
+                    "uniqueness": item.uniqueness,
+                    "score": item.score,
+                    "updated_at": _iso(item.updated_at),
+                },
+            )
 
     @staticmethod
     def _save_digest(conn: Any, digest: TopicDigest) -> None:
@@ -475,6 +521,38 @@ class WireStore:
             last_seen=parse_datetime(row["last_seen"]),
         )
 
+    def load_source_scores(self) -> dict[str, SourceScore]:
+        self.initialize()
+        with self.engine.connect() as conn:
+            rows = conn.execute(text("SELECT * FROM source_scores")).mappings()
+            return {row["source_id"]: self._row_to_score(row) for row in rows}
+
+    def source_scores(self) -> list[dict[str, Any]]:
+        """按综合分倒序返回信源评分，供 CLI 与看板展示。"""
+        self.initialize()
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                text("SELECT * FROM source_scores ORDER BY score DESC, source_id ASC")
+            ).mappings()
+            return [self._row_to_score(row).summary() for row in rows]
+
+    @staticmethod
+    def _row_to_score(row: Any) -> SourceScore:
+        return SourceScore(
+            source_id=row["source_id"],
+            runs=int(row["runs"] or 0),
+            items=int(row["items"] or 0),
+            corroborated=int(row["corroborated"] or 0),
+            exclusive=int(row["exclusive"] or 0),
+            timeliness_sum=float(row["timeliness_sum"] or 0.0),
+            timeliness_samples=int(row["timeliness_samples"] or 0),
+            accuracy=float(row["accuracy"] or 0.0),
+            timeliness=float(row["timeliness"] or 0.0),
+            uniqueness=float(row["uniqueness"] or 0.0),
+            score=float(row["score"] or 0.0),
+            updated_at=parse_datetime(row["updated_at"]) or datetime.now(timezone.utc),
+        )
+
     def source_status(self, day: date | str | None = None) -> list[dict[str, Any]]:
         self.initialize()
         day_text = _day(day) if day else self.latest_source_day()
@@ -523,11 +601,13 @@ class WireStore:
                     "date": key,
                     "items": counts_current["items"],
                     "events": counts_current["events"],
+                    "multi_source": counts_current["multi_source"],
                     "digests": counts_current["digests"],
                     "source_ok": counts_current["source_ok"],
                     "source_degraded": counts_current["source_degraded"],
                     "source_unavailable": counts_current["source_unavailable"],
                     "item_delta": counts_current["items"] - counts_previous["items"],
+                    "event_delta": counts_current["events"] - counts_previous["events"],
                     "digest_delta": counts_current["digests"] - counts_previous["digests"],
                 }
             )
@@ -547,6 +627,7 @@ class WireStore:
         with self.engine.connect() as conn:
             item_sql = "SELECT COUNT(*) FROM items WHERE day = :day"
             event_sql = "SELECT COUNT(*) FROM events WHERE day = :day"
+            multi_sql = "SELECT COUNT(*) FROM events WHERE day = :day AND source_count >= 2"
             digest_sql = "SELECT COUNT(*) FROM digests WHERE day = :day"
             source_sql = (
                 "SELECT status, COUNT(*) AS total FROM source_status WHERE day = :day GROUP BY status"
@@ -555,6 +636,7 @@ class WireStore:
             if topic:
                 item_sql += " AND topic = :topic"
                 event_sql += " AND topic = :topic"
+                multi_sql += " AND topic = :topic"
                 digest_sql += " AND topic = :topic"
                 source_sql = (
                     "SELECT status, COUNT(*) AS total FROM source_status "
@@ -564,6 +646,7 @@ class WireStore:
             counts = self._empty_counts()
             counts["items"] = int(conn.execute(text(item_sql), params).scalar_one())
             counts["events"] = int(conn.execute(text(event_sql), params).scalar_one())
+            counts["multi_source"] = int(conn.execute(text(multi_sql), params).scalar_one())
             counts["digests"] = int(conn.execute(text(digest_sql), params).scalar_one())
             for row in conn.execute(text(source_sql), params):
                 status = row[0]
@@ -576,6 +659,7 @@ class WireStore:
         return {
             "items": 0,
             "events": 0,
+            "multi_source": 0,
             "digests": 0,
             "source_ok": 0,
             "source_degraded": 0,

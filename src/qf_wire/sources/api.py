@@ -59,9 +59,12 @@ def _find_entries(payload: Any, depth: int = 0) -> list[dict[str, Any]]:
 
 class APIAdapter(SourceAdapter):
     source_type = "api"
+    accept = "application/json, */*"
 
     def fetch(self, timeout_sec: float | None = None) -> list[SourceItem]:
-        raw = self._get(timeout_sec=timeout_sec, accept="application/json, */*")
+        return self.parse(self._get(timeout_sec=timeout_sec, accept=self.accept))
+
+    def parse(self, raw: bytes) -> list[SourceItem]:
         text = self._decode(raw).strip()
         if not text:
             raise SourceError("空响应")

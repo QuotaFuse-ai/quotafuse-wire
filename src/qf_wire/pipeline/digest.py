@@ -28,6 +28,12 @@ from qf_wire.logging.setup import get_logger
 logger = get_logger(__name__)
 
 MAX_ERROR_LEN = 240
+# `user-model` 是“用用户自己配置的默认模型”的占位符，不能当成真实模型名传给 provider
+MODEL_SENTINELS = frozenset({"", "user-model"})
+SUPPORTED_SCHEMAS: dict[str, tuple[str, ...]] = {
+    "TopicDigest": ("summary", "key_points", "items"),
+    "BriefDigest": ("summary", "key_points"),
+}
 
 
 class DigestUnavailable(RuntimeError):
@@ -42,12 +48,17 @@ def digest_topic(
 ) -> TopicDigest:
     settings = config.digest
     per_topic = settings.for_topic(topic.id)
+    schema = str(per_topic.get("output_schema") or settings.output_schema)
+    if schema not in SUPPORTED_SCHEMAS:
+        raise ConfigError(
+            f"赛道 {topic.id} 的 output_schema 不支持: {schema}（可用: {', '.join(SUPPORTED_SCHEMAS)}）"
+        )
     selected = items[: settings.max_items]
     base = {
         "topic": topic.id,
         "date": day,
         "provider": settings.provider,
-        "model": per_topic.get("model") or settings.default_model,
+        "model": _resolve_model(settings, per_topic),
     }
 
     if not selected:
@@ -61,13 +72,13 @@ def digest_topic(
             generated_at=datetime.now(timezone.utc),
         )
 
-    prompt = build_prompt(config, topic, day, selected)
+    prompt = build_prompt(config, topic, day, selected, schema=schema)
     last_error: str | None = None
     for attempt in range(1, settings.retries + 2):
         try:
             raw = _call_provider(prompt, settings, per_topic)
             payload = extract_json(raw)
-            digest = _to_digest(payload, base, selected)
+            digest = _to_digest(payload, base, selected, schema=schema)
             logger.info("赛道 %s 提炼完成：%d 条要点", topic.id, len(digest.key_points))
             return digest
         except DigestUnavailable as exc:
@@ -84,7 +95,14 @@ def digest_topic(
     return _fallback_digest(base, selected, last_error or "模型不可用")
 
 
-def build_prompt(config: WireConfig, topic: Topic, day: date, items: list[SourceItem]) -> str:
+def build_prompt(
+    config: WireConfig,
+    topic: Topic,
+    day: date,
+    items: list[SourceItem],
+    *,
+    schema: str = "TopicDigest",
+) -> str:
     template = config.read_prompt(topic.id)
     payload = [
         {
@@ -101,6 +119,9 @@ def build_prompt(config: WireConfig, topic: Topic, day: date, items: list[Source
     ]
     return (
         f"{template.rstrip()}\n\n"
+        f"## 输出要求\n\n"
+        f"schema: {schema}\n"
+        f"fields: {', '.join(SUPPORTED_SCHEMAS[schema])}\n\n"
         f"## 输入\n\n"
         f"topic: {topic.id}\n"
         f"date: {day.isoformat()}\n"
@@ -108,22 +129,34 @@ def build_prompt(config: WireConfig, topic: Topic, day: date, items: list[Source
     )
 
 
+def _resolve_model(settings: DigestSettings, per_topic: dict[str, Any]) -> str | None:
+    """返回真实模型名；未配置或仍是占位符时返回 None（交给 provider 默认值）。"""
+    model = str(per_topic.get("model") or settings.default_model or "").strip()
+    return None if model in MODEL_SENTINELS else model
+
+
 def _call_provider(prompt: str, settings: DigestSettings, per_topic: dict[str, Any]) -> str:
     provider = str(per_topic.get("provider") or settings.provider)
+    model = _resolve_model(settings, per_topic)
     if provider == "claude-cli":
-        return _call_claude_cli(prompt, settings)
+        return _call_claude_cli(prompt, settings, model)
     if provider == "api":
-        return _call_openai_compatible(prompt, settings, per_topic)
+        if not model:
+            raise DigestUnavailable("未配置模型名：请在 digest.yaml 的 default_model 或赛道 model 填写真实模型")
+        return _call_openai_compatible(prompt, settings, per_topic, model)
     if provider == "gateway":
         raise DigestUnavailable("gateway provider 在 M3 提供，M1 请使用 claude-cli 或 api")
     raise ConfigError(f"未知提炼 provider: {provider}")
 
 
-def _call_claude_cli(prompt: str, settings: DigestSettings) -> str:
+def _call_claude_cli(prompt: str, settings: DigestSettings, model: str | None = None) -> str:
     binary = os.environ.get("QF_WIRE_CLAUDE_BIN") or shutil.which("claude")
     if not binary:
         raise DigestUnavailable("未找到 claude CLI，可通过 QF_WIRE_CLAUDE_BIN 指定路径")
-    command = [binary, "-p", prompt]
+    command = [binary]
+    if model:
+        command.extend(["--model", model])
+    command.extend(["-p", prompt])
     try:
         completed = subprocess.run(
             command,
@@ -147,7 +180,12 @@ def _call_claude_cli(prompt: str, settings: DigestSettings) -> str:
     return output
 
 
-def _call_openai_compatible(prompt: str, settings: DigestSettings, per_topic: dict[str, Any]) -> str:
+def _call_openai_compatible(
+    prompt: str,
+    settings: DigestSettings,
+    per_topic: dict[str, Any],
+    model: str,
+) -> str:
     base = (
         per_topic.get("api_base")
         or settings.api_base
@@ -158,7 +196,6 @@ def _call_openai_compatible(prompt: str, settings: DigestSettings, per_topic: di
     key = os.environ.get(settings.api_key_env) or os.environ.get("OPENAI_API_KEY")
     if not key:
         raise DigestUnavailable(f"未配置 API key（环境变量 {settings.api_key_env} 或 OPENAI_API_KEY）")
-    model = per_topic.get("model") or settings.default_model
     body = json.dumps(
         {
             "model": model,
@@ -238,7 +275,13 @@ def _matching_brace(text: str, start: int) -> int:
     return -1
 
 
-def _to_digest(payload: dict[str, Any], base: dict[str, Any], selected: list[SourceItem]) -> TopicDigest:
+def _to_digest(
+    payload: dict[str, Any],
+    base: dict[str, Any],
+    selected: list[SourceItem],
+    *,
+    schema: str = "TopicDigest",
+) -> TopicDigest:
     key_points: list[KeyPoint] = []
     for raw in payload.get("key_points") or []:
         if not isinstance(raw, dict):
@@ -256,7 +299,8 @@ def _to_digest(payload: dict[str, Any], base: dict[str, Any], selected: list[Sou
         )
 
     items: list[DigestItem] = []
-    for raw in payload.get("items") or []:
+    model_items = payload.get("items") if "items" in SUPPORTED_SCHEMAS[schema] else None
+    for raw in model_items or []:
         if not isinstance(raw, dict):
             continue
         title = str(raw.get("title") or "").strip()
