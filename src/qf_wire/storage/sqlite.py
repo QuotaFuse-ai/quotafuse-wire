@@ -383,10 +383,15 @@ class WireStore:
                 result.setdefault(row["topic"], []).append(item)
         return result
 
-    def latest_day(self) -> str | None:
+    def latest_day(self, topic: str | None = None) -> str | None:
         self.initialize()
+        sql = "SELECT MAX(day) FROM items"
+        params: dict[str, Any] = {}
+        if topic:
+            sql += " WHERE topic = :topic"
+            params["topic"] = topic
         with self.engine.connect() as conn:
-            value = conn.execute(text("SELECT MAX(day) FROM items")).scalar()
+            value = conn.execute(text(sql), params).scalar()
         return str(value) if value else None
 
     def get_digest(self, topic: str, day: date | str) -> TopicDigest | None:
