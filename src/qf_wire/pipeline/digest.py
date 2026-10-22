@@ -149,8 +149,33 @@ def _call_provider(prompt: str, settings: DigestSettings, per_topic: dict[str, A
             raise DigestUnavailable("未配置模型名：请在 digest.yaml 的 default_model 或赛道 model 填写真实模型")
         return _call_openai_compatible(prompt, settings, per_topic, model)
     if provider == "gateway":
-        raise DigestUnavailable("gateway provider 在 M3 提供，M1 请使用 claude-cli 或 api")
+        try:
+            return _call_gateway(prompt, settings, per_topic, model)
+        except DigestUnavailable as exc:
+            logger.warning("模型网关不可用，降级 claude-cli：%s", exc)
+            return _call_claude_cli(prompt, settings, model)
     raise ConfigError(f"未知提炼 provider: {provider}")
+
+
+def _call_gateway(
+    prompt: str,
+    settings: DigestSettings,
+    per_topic: dict[str, Any],
+    model: str | None,
+) -> str:
+    base = str(
+        per_topic.get("gateway_base_url")
+        or settings.gateway_base_url
+        or os.environ.get("QF_WIRE_MODEL_GATEWAY_URL")
+        or ""
+    ).strip()
+    if not base or "${" in base:
+        raise DigestUnavailable("未配置模型网关地址（digest.yaml gateway.base_url 或 QF_WIRE_MODEL_GATEWAY_URL）")
+    key_env = str(per_topic.get("gateway_api_key_env") or settings.gateway_api_key_env)
+    key = os.environ.get(key_env)
+    if not key:
+        raise DigestUnavailable(f"未配置模型网关密钥（环境变量 {key_env}）")
+    return _post_chat(base, key, prompt, model, settings.timeout_sec, label="模型网关")
 
 
 def _call_claude_cli(prompt: str, settings: DigestSettings, model: str | None = None) -> str:
@@ -202,16 +227,28 @@ def _call_openai_compatible(
         raise DigestUnavailable(
             f"未配置 API key（环境变量 {settings.api_key_env}、LLM_API_KEY 或 OPENAI_API_KEY）"
         )
-    body = json.dumps(
-        {
-            "model": model,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.2,
-        }
-    ).encode("utf-8")
+    return _post_chat(base, key, prompt, model, settings.timeout_sec, label="模型接口")
+
+
+def _post_chat(
+    base: str,
+    key: str,
+    prompt: str,
+    model: str | None,
+    timeout_sec: int,
+    *,
+    label: str,
+) -> str:
+    """POST OpenAI 兼容的 chat/completions；错误信息只带状态码，绝不带密钥。"""
+    body: dict[str, Any] = {
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.2,
+    }
+    if model:
+        body["model"] = model
     request = urllib.request.Request(
-        f"{base}/chat/completions",
-        data=body,
+        f"{base.rstrip('/')}/chat/completions",
+        data=json.dumps(body).encode("utf-8"),
         headers={
             "Content-Type": "application/json",
             "Authorization": f"Bearer {key}",
@@ -219,16 +256,16 @@ def _call_openai_compatible(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=settings.timeout_sec) as response:
+        with urllib.request.urlopen(request, timeout=timeout_sec) as response:
             payload = json.loads(response.read().decode("utf-8", errors="replace"))
     except urllib.error.HTTPError as exc:
-        raise DigestUnavailable(f"模型接口 HTTP {exc.code}") from exc
+        raise DigestUnavailable(f"{label} HTTP {exc.code}") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
-        raise DigestUnavailable(f"模型接口不可达: {exc}") from exc
+        raise DigestUnavailable(f"{label}不可达: {exc}") from exc
     try:
         return payload["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
-        raise DigestUnavailable("模型接口返回结构不符合预期") from exc
+        raise DigestUnavailable(f"{label}返回结构不符合预期") from exc
 
 
 def extract_json(text: str) -> dict[str, Any]:
