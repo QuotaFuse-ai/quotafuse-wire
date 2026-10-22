@@ -25,7 +25,7 @@ data/archive/*
 data.js
 
 # Secrets and local overrides
-.env
+# 仓库里的 .env 只放空值；有密钥的本地覆盖写到 .env.local（已忽略）
 .env.*
 !.env.example
 llm.config.local.json

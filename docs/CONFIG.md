@@ -95,11 +95,28 @@ schedule:
 - `claude-cli`：调用本机已登录的 Claude Code，零成本；
 - `api`：任意 OpenAI 兼容接口（DeepSeek / OpenAI / SiliconFlow / OpenRouter 等）。
 
-API key 优先从环境变量读取（`LLM_API_KEY` 或 `digest.yaml` 指定的变量名），**不要写进仓库**。
+API key 优先从环境变量读取（`QF_WIRE_API_KEY` / `LLM_API_KEY` / `OPENAI_API_KEY`，或 `digest.yaml` 指定变量名），**不要写进仓库**。
 
-## 环境变量
+`provider`、模型名、`api_base` 也可以直接用环境变量覆盖：
 
-见 `.env.example`。所有变量都有默认值；显式环境变量优先于配置文件中的非敏感项。
+```bash
+QF_WIRE_DIGEST_PROVIDER=api
+QF_WIRE_DIGEST_MODEL=deepseek-chat
+QF_WIRE_API_BASE=https://api.deepseek.com/v1
+QF_WIRE_API_KEY=sk-...
+```
+
+## 环境变量与 .env
+
+程序启动时自动读取仓库根目录的 `.env`（再往上找）以及同目录的 `.env.local`，见 `.env.example`。优先级：
+
+```text
+真实环境变量 > .env.local > .env > 代码默认值
+```
+
+- 仓库里的 `.env` 只放空值，可以提交；
+- 填了密钥的覆盖写到 `.env.local`，该文件已被 `.gitignore` 忽略；
+- 空值等同于未配置，不会覆盖默认值。
 
 ## 校验
 

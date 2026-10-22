@@ -55,6 +55,8 @@ def build_dashboard_payload(
                     }
                     for point in (digest.key_points if digest else [])
                 ],
+                "digest_state": _digest_state(digest),
+                "digest_error": (digest.error or "") if digest else "",
                 "items": projected,
             }
         )
@@ -83,6 +85,16 @@ def build_dashboard_payload(
                 f"{result.source_name or result.source_id}：该源今日不可用" for result in unavailable
             ]
     return payload
+
+
+def _digest_state(digest: TopicDigest | None) -> str:
+    if digest is None:
+        return "missing"
+    if digest.fallback or digest.partial or digest.status != "ok":
+        return "partial"
+    if not digest.summary and not digest.key_points:
+        return "missing"
+    return "ok"
 
 
 def _digest_item_map(digest: TopicDigest | None) -> dict[str, dict[str, str]]:
