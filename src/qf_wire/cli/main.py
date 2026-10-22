@@ -17,7 +17,7 @@ from qf_wire.cli.context import OUTPUT_FORMATS, AppContext
 from qf_wire.cli.digest import digest_command
 from qf_wire.cli.event import event_app
 from qf_wire.cli.history import history_command
-from qf_wire.cli.mcp import mcp_command
+from qf_wire.cli.mcp import mcp_app
 from qf_wire.cli.run import run_command
 from qf_wire.cli.serve import serve_command
 from qf_wire.cli.sources import sources_app
@@ -39,6 +39,7 @@ app.add_typer(sources_app, name="sources")
 app.add_typer(topics_app, name="topics")
 app.add_typer(config_app, name="config")
 app.add_typer(event_app, name="event")
+app.add_typer(mcp_app, name="mcp")
 
 
 @app.callback(invoke_without_command=True)
@@ -79,7 +80,6 @@ app.command("run")(run_command)
 app.command("digest")(digest_command)
 app.command("serve")(serve_command)
 app.command("history")(history_command)
-app.command("mcp")(mcp_command)
 
 
 def cli(argv: list[str] | None = None) -> int:
