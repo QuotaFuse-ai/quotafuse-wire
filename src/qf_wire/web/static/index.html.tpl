@@ -135,7 +135,7 @@
 
   .items {
     display: grid; gap: 12px; align-items: start;
-    grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
   .item {
     background: var(--panel); border: 1px solid var(--line); border-radius: 13px;
