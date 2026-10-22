@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local runtime data
+data/*
+!data/.gitkeep
+!data/archive/
+data/archive/*
+!data/archive/.gitkeep
+*.db
+*.db-journal
+*.parquet
+data.js
+
+# Secrets and local overrides
+.env
+.env.*
+!.env.example
+llm.config.local.json
+config/*.local.yaml
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

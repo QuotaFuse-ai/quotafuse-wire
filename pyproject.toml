@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quota-fuse-wire"
+version = "0.1.0"
+description = "QuotaFuse Wire - local-first multi-source news collection, AI digest, event clustering and MCP access"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "QuotaFuse" }]
+keywords = ["news", "rss", "digest", "mcp", "local-first", "quota-fuse"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "aiohttp>=3.9",
+    "apscheduler>=3.10",
+    "mcp>=1.2",
+    "pydantic>=2.5",
+    "pyyaml>=6.0",
+    "sqlalchemy>=2.0",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+qfw = "qf_wire.cli.main:main"
+quota-fuse-wire = "qf_wire.cli.main:main"
+
+[project.urls]
+Homepage = "https://github.com/QuotaFuse-ai/quotafuse-wire"
+Issues = "https://github.com/QuotaFuse-ai/quotafuse-wire/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+qf_wire = ["web/static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-ra"

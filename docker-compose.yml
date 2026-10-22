@@ -1,0 +1,29 @@
+services:
+  wire:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: quotafuse/wire:0.1.0
+    container_name: qf-wire
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8790:8790"   # 本地看板，仅本机监听
+      - "127.0.0.1:8791:8791"   # MCP http，仅本机监听
+    environment:
+      QF_WIRE_DATA_DIR: /data
+      QF_WIRE_CONFIG_DIR: /app/config
+      QF_WIRE_HOST: 0.0.0.0
+      QF_WIRE_PORT: "8790"
+      QF_WIRE_MCP_HOST: 0.0.0.0
+      QF_WIRE_MCP_PORT: "8791"
+      QF_WIRE_MULTIUSER: "false"
+      QF_WIRE_LOG_LEVEL: INFO
+    volumes:
+      - ./data:/data
+      - ./config:/app/config
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8790/api/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

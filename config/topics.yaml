@@ -1,0 +1,88 @@
+# 赛道定义。新增赛道只需追加一项，无需改代码。
+# id 为规范 id；aliases 兼容旧 hint 与文档别名。
+version: 1
+topics:
+  - id: ai
+    name: "AI / 大模型"
+    accent: "#ff5a1f"
+    legacy_key: ai
+    aliases: [ai, llm]
+    keywords: [大模型, 生成式AI, LLM, 推理, 训练, Agent, 多模态, 开源模型, 算力]
+    sources: [openai, google_research, hugging_face, qbitai, mit_tech_review_ai, the_verge_ai, techcrunch_ai, arxiv_cs_ai, kdnuggets, marktechpost, bair_blog, import_ai, deepmind, zhidx, jiqizhixin, xinzhiyuan]
+  - id: semiconductor
+    name: "半导体 / 芯片"
+    accent: "#22d3ee"
+    legacy_key: semi
+    aliases: [semi, chip, chips]
+    keywords: [芯片, 晶圆, 光刻, 先进制程, 封装, EDA, GPU, 存储芯片]
+    sources: [digitimes, semianalysis, semiconductor_engineering, ee_times, ieee_spectrum_semi, semiwiki, semiconductor_today, electronics_weekly, all_about_circuits]
+  - id: robotics
+    name: "机器人 / 自动化"
+    accent: "#14b8a6"
+    legacy_key: robot
+    aliases: [robot]
+    keywords: [机器人, 人形机器人, 自动化, 具身智能, 运动控制, 工业机器人]
+    sources: [the_robot_report, ieee_spectrum_robot, robohub, robotics_automation, robotics_business_review]
+  - id: automotive
+    name: "汽车 / 新能源车"
+    accent: "#fb7185"
+    legacy_key: auto
+    aliases: [auto, ev]
+    keywords: [新能源汽车, 电动车, 自动驾驶, 电池, 充电, 智能座舱, 车企]
+    sources: [electrek, insideevs, the_verge_transport, techcrunch_transport, cnevpost]
+  - id: energy
+    name: "能源 / 新能源"
+    accent: "#84cc16"
+    legacy_key: energy
+    aliases: [energy]
+    keywords: [新能源, 光伏, 储能, 风电, 电网, 锂电, 氢能, 电力]
+    sources: [cleantechnica, utility_dive, pv_magazine, energy_storage_news, oilprice, canary_media, pv_tech, renewable_energy_world, in_en]
+  - id: biotech
+    name: "生物医药 / 健康"
+    accent: "#ec4899"
+    legacy_key: bio
+    aliases: [bio, pharma]
+    keywords: [生物医药, 创新药, 临床试验, 基因, 医疗器械, 疫苗, FDA]
+    sources: [stat_news, endpoints_news, fiercebiotech, fiercepharma, biopharma_dive, gen, nature_biotech]
+  - id: aerospace
+    name: "航天 / 太空"
+    accent: "#8b5cf6"
+    legacy_key: space
+    aliases: [space, aerospace]
+    keywords: [航天, 卫星, 火箭, 太空, 发射, 商业航天, NASA]
+    sources: [spacenews, space_com, spaceflight_now, payload, nasa, nasaspaceflight]
+  - id: cybersecurity
+    name: "网络安全"
+    accent: "#ef4444"
+    legacy_key: security
+    aliases: [security, infosec]
+    keywords: [网络安全, 漏洞, 勒索软件, 数据泄露, 零日, 供应链攻击, 合规]
+    sources: [krebs_on_security, the_hacker_news, bleepingcomputer, dark_reading, securityweek]
+  - id: tech
+    name: "科技 / 互联网"
+    accent: "#3b82f6"
+    legacy_key: tech
+    aliases: [tech, internet]
+    keywords: [互联网, 科技巨头, 开源, 云计算, 平台, 开发者, 并购]
+    sources: [techcrunch, the_verge, ars_technica, hacker_news, wired, techmeme, kr36, tmtpost, ithome, github_blog, stratechery, huxiu, technode, williamlong, solidot, baijingapp]
+  - id: consumer
+    name: "消费电子 / 数码"
+    accent: "#a855f7"
+    legacy_key: consumer
+    aliases: [consumer, electronics]
+    keywords: [消费电子, 手机, 可穿戴, 耳机, 相机, 智能硬件, 数码]
+    sources: [engadget, 9to5mac, 9to5google, gsmarena, android_authority, dpreview, sspai]
+  - id: macro
+    name: "财经 / 宏观"
+    accent: "#eab308"
+    legacy_key: macro
+    aliases: [macro, finance]
+    keywords: [宏观经济, 央行, 利率, 通胀, 财报, 资本市场, 政策, 监管]
+    sources: [cnbc, financial_times, wsj_markets, marketwatch, yahoo_finance, wallstreetcn, finextra, sec, federal_reserve, seeking_alpha, eastmoney_stock, eastmoney_news, eeo]
+  - id: science
+    name: "科学 / 前沿"
+    accent: "#38bdf8"
+    legacy_key: science
+    aliases: [science]
+    keywords: [科学研究, 论文, 突破, 实验, 天文, 物理, 材料, 生物]
+    sources: [nature_news, sciencedaily, quanta_magazine, new_scientist, live_science, mit_news, science_news, ars_technica_science]

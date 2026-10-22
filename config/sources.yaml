@@ -1,0 +1,962 @@
+# 信源清单。type 支持 rss / html / api；weight 参与信源评分与排序。
+# 新增源：追加一项并保证 id 唯一，然后运行 qfw sources validate。
+version: 1
+defaults:
+  timeout_sec: 15
+  retries: 2
+  weight: 1.0
+sources:
+  - id: openai
+    name: "OpenAI"
+    topic: ai
+    type: rss
+    url: "https://openai.com/news/rss.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: google_research
+    name: "Google Research"
+    topic: ai
+    type: rss
+    url: "https://research.google/blog/rss/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: hugging_face
+    name: "Hugging Face"
+    topic: ai
+    type: rss
+    url: "https://huggingface.co/blog/feed.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: qbitai
+    name: "量子位"
+    topic: ai
+    type: rss
+    url: "https://www.qbitai.com/feed"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: mit_tech_review_ai
+    name: "MIT Tech Review AI"
+    topic: ai
+    type: rss
+    url: "https://www.technologyreview.com/topic/artificial-intelligence/feed"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: the_verge_ai
+    name: "The Verge AI"
+    topic: ai
+    type: rss
+    url: "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: techcrunch_ai
+    name: "TechCrunch AI"
+    topic: ai
+    type: rss
+    url: "https://techcrunch.com/category/artificial-intelligence/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: arxiv_cs_ai
+    name: "arXiv cs.AI"
+    topic: ai
+    type: rss
+    url: "https://export.arxiv.org/rss/cs.AI"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: kdnuggets
+    name: "KDnuggets"
+    topic: ai
+    type: rss
+    url: "https://www.kdnuggets.com/feed"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: marktechpost
+    name: "MarkTechPost"
+    topic: ai
+    type: rss
+    url: "https://www.marktechpost.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: bair_blog
+    name: "BAIR Blog"
+    topic: ai
+    type: rss
+    url: "https://bair.berkeley.edu/blog/feed.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: import_ai
+    name: "Import AI"
+    topic: ai
+    type: rss
+    url: "https://importai.substack.com/feed"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: deepmind
+    name: "DeepMind"
+    topic: ai
+    type: rss
+    url: "https://deepmind.google/blog/rss.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: zhidx
+    name: "智东西"
+    topic: ai
+    type: rss
+    url: "https://zhidx.com/rss"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: jiqizhixin
+    name: "机器之心"
+    topic: ai
+    type: rss
+    url: "https://wechat2rss.xlab.app/feed/51e92aad2728acdd1fda7314be32b16639353001.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: xinzhiyuan
+    name: "新智元"
+    topic: ai
+    type: rss
+    url: "https://wechat2rss.xlab.app/feed/ede30346413ea70dbef5d485ea5cbb95cca446e7.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: digitimes
+    name: "DIGITIMES"
+    topic: semiconductor
+    type: rss
+    url: "https://www.digitimes.com/rss/daily.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: semianalysis
+    name: "SemiAnalysis"
+    topic: semiconductor
+    type: rss
+    url: "https://semianalysis.substack.com/feed"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: semiconductor_engineering
+    name: "Semiconductor Engineering"
+    topic: semiconductor
+    type: rss
+    url: "https://semiengineering.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: ee_times
+    name: "EE Times"
+    topic: semiconductor
+    type: rss
+    url: "https://www.eetimes.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: ieee_spectrum_semi
+    name: "IEEE Spectrum 半导体"
+    topic: semiconductor
+    type: rss
+    url: "https://spectrum.ieee.org/feeds/topic/semiconductors.rss"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: semiwiki
+    name: "SemiWiki"
+    topic: semiconductor
+    type: rss
+    url: "https://semiwiki.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: semiconductor_today
+    name: "Semiconductor Today"
+    topic: semiconductor
+    type: rss
+    url: "https://www.semiconductor-today.com/rss/news.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: electronics_weekly
+    name: "Electronics Weekly"
+    topic: semiconductor
+    type: rss
+    url: "https://www.electronicsweekly.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: all_about_circuits
+    name: "All About Circuits"
+    topic: semiconductor
+    type: rss
+    url: "https://www.allaboutcircuits.com/rss/news/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: the_robot_report
+    name: "The Robot Report"
+    topic: robotics
+    type: rss
+    url: "https://www.therobotreport.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: ieee_spectrum_robot
+    name: "IEEE Spectrum 机器人"
+    topic: robotics
+    type: rss
+    url: "https://spectrum.ieee.org/feeds/topic/robotics.rss"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: robohub
+    name: "Robohub"
+    topic: robotics
+    type: rss
+    url: "https://robohub.org/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: robotics_automation
+    name: "Robotics & Automation"
+    topic: robotics
+    type: rss
+    url: "https://roboticsandautomationnews.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: robotics_business_review
+    name: "Robotics Business Review"
+    topic: robotics
+    type: rss
+    url: "https://www.roboticsbusinessreview.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: electrek
+    name: "Electrek"
+    topic: automotive
+    type: rss
+    url: "https://electrek.co/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: insideevs
+    name: "InsideEVs"
+    topic: automotive
+    type: rss
+    url: "https://insideevs.com/rss/articles/all/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: the_verge_transport
+    name: "The Verge Transport"
+    topic: automotive
+    type: rss
+    url: "https://www.theverge.com/rss/transportation/index.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: techcrunch_transport
+    name: "TechCrunch Transport"
+    topic: automotive
+    type: rss
+    url: "https://techcrunch.com/category/transportation/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: cnevpost
+    name: "CnEVPost"
+    topic: automotive
+    type: rss
+    url: "https://cnevpost.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: cleantechnica
+    name: "CleanTechnica"
+    topic: energy
+    type: rss
+    url: "https://cleantechnica.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: utility_dive
+    name: "Utility Dive"
+    topic: energy
+    type: rss
+    url: "https://www.utilitydive.com/feeds/news/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: pv_magazine
+    name: "pv magazine"
+    topic: energy
+    type: rss
+    url: "https://www.pv-magazine.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: energy_storage_news
+    name: "Energy Storage News"
+    topic: energy
+    type: rss
+    url: "https://www.energy-storage.news/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: oilprice
+    name: "OilPrice"
+    topic: energy
+    type: rss
+    url: "https://oilprice.com/rss/main"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: canary_media
+    name: "Canary Media"
+    topic: energy
+    type: rss
+    url: "https://www.canarymedia.com/articles.rss"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: pv_tech
+    name: "PV Tech"
+    topic: energy
+    type: rss
+    url: "https://www.pv-tech.org/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: renewable_energy_world
+    name: "Renewable Energy World"
+    topic: energy
+    type: rss
+    url: "https://www.renewableenergyworld.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: in_en
+    name: "国际能源网"
+    topic: energy
+    type: rss
+    url: "https://www.in-en.com/feed/rss.php?mid=21"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: stat_news
+    name: "STAT News"
+    topic: biotech
+    type: rss
+    url: "https://www.statnews.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: endpoints_news
+    name: "Endpoints News"
+    topic: biotech
+    type: rss
+    url: "https://endpts.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: fiercebiotech
+    name: "FierceBiotech"
+    topic: biotech
+    type: rss
+    url: "https://www.fiercebiotech.com/rss/xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: fiercepharma
+    name: "FiercePharma"
+    topic: biotech
+    type: rss
+    url: "https://www.fiercepharma.com/rss/xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: biopharma_dive
+    name: "BioPharma Dive"
+    topic: biotech
+    type: rss
+    url: "https://www.biopharmadive.com/feeds/news/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: gen
+    name: "GEN"
+    topic: biotech
+    type: rss
+    url: "https://www.genengnews.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: nature_biotech
+    name: "Nature Biotech"
+    topic: biotech
+    type: rss
+    url: "https://www.nature.com/nbt.rss"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: spacenews
+    name: "SpaceNews"
+    topic: aerospace
+    type: rss
+    url: "https://spacenews.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: space_com
+    name: "Space.com"
+    topic: aerospace
+    type: rss
+    url: "https://www.space.com/feeds/all"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: spaceflight_now
+    name: "Spaceflight Now"
+    topic: aerospace
+    type: rss
+    url: "https://spaceflightnow.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: payload
+    name: "Payload"
+    topic: aerospace
+    type: rss
+    url: "https://payloadspace.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: nasa
+    name: "NASA"
+    topic: aerospace
+    type: rss
+    url: "https://www.nasa.gov/news-release/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: nasaspaceflight
+    name: "NASASpaceflight"
+    topic: aerospace
+    type: rss
+    url: "https://www.nasaspaceflight.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: krebs_on_security
+    name: "Krebs on Security"
+    topic: cybersecurity
+    type: rss
+    url: "https://krebsonsecurity.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: the_hacker_news
+    name: "The Hacker News"
+    topic: cybersecurity
+    type: rss
+    url: "https://feeds.feedburner.com/TheHackersNews"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: bleepingcomputer
+    name: "BleepingComputer"
+    topic: cybersecurity
+    type: rss
+    url: "https://www.bleepingcomputer.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: dark_reading
+    name: "Dark Reading"
+    topic: cybersecurity
+    type: rss
+    url: "https://www.darkreading.com/rss.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: securityweek
+    name: "SecurityWeek"
+    topic: cybersecurity
+    type: rss
+    url: "https://www.securityweek.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: techcrunch
+    name: "TechCrunch"
+    topic: tech
+    type: rss
+    url: "https://techcrunch.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: the_verge
+    name: "The Verge"
+    topic: tech
+    type: rss
+    url: "https://www.theverge.com/rss/index.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: ars_technica
+    name: "Ars Technica"
+    topic: tech
+    type: rss
+    url: "https://feeds.arstechnica.com/arstechnica/index"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: hacker_news
+    name: "Hacker News"
+    topic: tech
+    type: rss
+    url: "https://hnrss.org/frontpage"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: wired
+    name: "WIRED"
+    topic: tech
+    type: rss
+    url: "https://www.wired.com/feed/rss"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: techmeme
+    name: "Techmeme"
+    topic: tech
+    type: rss
+    url: "https://www.techmeme.com/feed.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: kr36
+    name: "36氪"
+    topic: tech
+    type: rss
+    url: "https://36kr.com/feed"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: tmtpost
+    name: "钛媒体"
+    topic: tech
+    type: rss
+    url: "https://www.tmtpost.com/rss.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: ithome
+    name: "IT之家"
+    topic: tech
+    type: rss
+    url: "https://www.ithome.com/rss/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: github_blog
+    name: "GitHub Blog"
+    topic: tech
+    type: rss
+    url: "https://github.blog/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: stratechery
+    name: "Stratechery"
+    topic: tech
+    type: rss
+    url: "https://stratechery.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: huxiu
+    name: "虎嗅"
+    topic: tech
+    type: rss
+    url: "https://rss.huxiu.com/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: technode
+    name: "动点科技"
+    topic: tech
+    type: rss
+    url: "https://cn.technode.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: williamlong
+    name: "月光博客"
+    topic: tech
+    type: rss
+    url: "https://www.williamlong.info/rss.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: solidot
+    name: "Solidot"
+    topic: tech
+    type: rss
+    url: "https://www.solidot.org/index.rss"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: baijingapp
+    name: "白鲸出海"
+    topic: tech
+    type: rss
+    url: "https://www.baijingapp.com/feed"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: engadget
+    name: "Engadget"
+    topic: consumer
+    type: rss
+    url: "https://www.engadget.com/rss.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: 9to5mac
+    name: "9to5Mac"
+    topic: consumer
+    type: rss
+    url: "https://9to5mac.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: 9to5google
+    name: "9to5Google"
+    topic: consumer
+    type: rss
+    url: "https://9to5google.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: gsmarena
+    name: "GSMArena"
+    topic: consumer
+    type: rss
+    url: "https://www.gsmarena.com/rss-news-reviews.php3"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: android_authority
+    name: "Android Authority"
+    topic: consumer
+    type: rss
+    url: "https://www.androidauthority.com/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: dpreview
+    name: "DPReview"
+    topic: consumer
+    type: rss
+    url: "https://www.dpreview.com/feeds/news.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: sspai
+    name: "少数派"
+    topic: consumer
+    type: rss
+    url: "https://sspai.com/feed"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: cnbc
+    name: "CNBC"
+    topic: macro
+    type: rss
+    url: "https://www.cnbc.com/id/100003114/device/rss/rss.html"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: financial_times
+    name: "Financial Times"
+    topic: macro
+    type: rss
+    url: "https://www.ft.com/rss/home"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: wsj_markets
+    name: "WSJ Markets"
+    topic: macro
+    type: rss
+    url: "https://feeds.a.dj.com/rss/RSSMarketsMain.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: marketwatch
+    name: "MarketWatch"
+    topic: macro
+    type: rss
+    url: "https://feeds.marketwatch.com/marketwatch/topstories/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: yahoo_finance
+    name: "Yahoo Finance"
+    topic: macro
+    type: rss
+    url: "https://finance.yahoo.com/news/rssindex"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: wallstreetcn
+    name: "华尔街见闻"
+    topic: macro
+    type: rss
+    url: "https://dedicated.wallstreetcn.com/rss.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: finextra
+    name: "Finextra"
+    topic: macro
+    type: rss
+    url: "https://www.finextra.com/rss/headlines.aspx"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: sec
+    name: "SEC"
+    topic: macro
+    type: rss
+    url: "https://www.sec.gov/news/pressreleases.rss"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: federal_reserve
+    name: "Federal Reserve"
+    topic: macro
+    type: rss
+    url: "https://www.federalreserve.gov/feeds/press_all.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: seeking_alpha
+    name: "Seeking Alpha"
+    topic: macro
+    type: rss
+    url: "https://seekingalpha.com/market_currents.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: eastmoney_stock
+    name: "东方财富股票"
+    topic: macro
+    type: rss
+    url: "http://rss.eastmoney.com/rss_stock.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: eastmoney_news
+    name: "东方财富资讯"
+    topic: macro
+    type: rss
+    url: "http://rss.eastmoney.com/rss_partener.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: eeo
+    name: "经济观察网"
+    topic: macro
+    type: rss
+    url: "http://www.eeo.com.cn/rss.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: nature_news
+    name: "Nature News"
+    topic: science
+    type: rss
+    url: "https://www.nature.com/nature.rss"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: sciencedaily
+    name: "ScienceDaily"
+    topic: science
+    type: rss
+    url: "https://www.sciencedaily.com/rss/all.xml"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: quanta_magazine
+    name: "Quanta Magazine"
+    topic: science
+    type: rss
+    url: "https://api.quantamagazine.org/feed/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: new_scientist
+    name: "New Scientist"
+    topic: science
+    type: rss
+    url: "https://www.newscientist.com/feed/home/"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: live_science
+    name: "Live Science"
+    topic: science
+    type: rss
+    url: "https://www.livescience.com/feeds/all"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: mit_news
+    name: "MIT News"
+    topic: science
+    type: rss
+    url: "https://news.mit.edu/rss/research"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: science_news
+    name: "Science News"
+    topic: science
+    type: rss
+    url: "https://www.sciencenews.org/feed"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true
+  - id: ars_technica_science
+    name: "Ars Technica Science"
+    topic: science
+    type: rss
+    url: "https://feeds.arstechnica.com/arstechnica/science"
+    timeout_sec: 15
+    retries: 2
+    weight: 1.0
+    enabled: true

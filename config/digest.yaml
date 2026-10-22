@@ -1,0 +1,52 @@
+# 提炼策略。默认模型沿用“用户自己的模型”原则：
+#   provider=claude-cli 使用本机 Claude 订阅；provider=api 使用任意 OpenAI 兼容接口。
+# 每个赛道可覆盖 prompt、模型与输出结构，未覆盖时回落到 default。
+digest:
+  version: 1
+  provider: claude-cli
+  default_model: user-model
+  language: zh
+  max_items_per_topic: 12
+  timeout_sec: 180
+  retries: 2
+  output_schema: TopicDigest
+  topics:
+    ai:
+      prompt_file: prompts/default.md
+      output_schema: TopicDigest
+    semiconductor:
+      prompt_file: prompts/semiconductor.md
+      output_schema: TopicDigest
+    robotics:
+      prompt_file: prompts/default.md
+      output_schema: TopicDigest
+    automotive:
+      prompt_file: prompts/default.md
+      output_schema: TopicDigest
+    energy:
+      prompt_file: prompts/default.md
+      output_schema: TopicDigest
+    biotech:
+      prompt_file: prompts/default.md
+      output_schema: TopicDigest
+    aerospace:
+      prompt_file: prompts/default.md
+      output_schema: TopicDigest
+    cybersecurity:
+      prompt_file: prompts/default.md
+      output_schema: TopicDigest
+    tech:
+      prompt_file: prompts/default.md
+      output_schema: TopicDigest
+    consumer:
+      prompt_file: prompts/default.md
+      output_schema: TopicDigest
+    macro:
+      prompt_file: prompts/policy.md
+      output_schema: TopicDigest
+    science:
+      prompt_file: prompts/default.md
+      output_schema: TopicDigest
+    default:
+      prompt_file: prompts/default.md
+      output_schema: TopicDigest
