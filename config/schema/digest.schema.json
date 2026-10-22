@@ -14,6 +14,8 @@
         "version": { "type": "integer", "minimum": 1 },
         "provider": { "type": "string", "enum": ["claude-cli", "api", "gateway"] },
         "default_model": { "type": "string", "minLength": 1 },
+        "api_base": { "type": "string", "pattern": "^https?://" },
+        "api_key_env": { "type": "string", "minLength": 1 },
         "language": { "type": "string", "minLength": 1 },
         "max_items_per_topic": { "type": "integer", "minimum": 1, "maximum": 100 },
         "timeout_sec": { "type": "integer", "minimum": 1, "maximum": 900 },
