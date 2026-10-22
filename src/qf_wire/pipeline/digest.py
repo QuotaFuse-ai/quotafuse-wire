@@ -13,6 +13,7 @@ import urllib.request
 from datetime import date, datetime, timezone
 from typing import Any
 
+from qf_wire.config.dotenv import first_env
 from qf_wire.config.loader import DigestSettings, WireConfig
 from qf_wire.core.cleaner import contains_trading_advice
 from qf_wire.core.errors import ConfigError
@@ -130,9 +131,12 @@ def build_prompt(
 
 
 def _resolve_model(settings: DigestSettings, per_topic: dict[str, Any]) -> str | None:
-    """返回真实模型名；未配置或仍是占位符时返回 None（交给 provider 默认值）。"""
-    model = str(per_topic.get("model") or settings.default_model or "").strip()
-    return None if model in MODEL_SENTINELS else model
+    """返回真实模型名；赛道占位符回落到 default_model，仍为空时返回 None。"""
+    for candidate in (per_topic.get("model"), settings.default_model):
+        model = str(candidate or "").strip()
+        if model not in MODEL_SENTINELS:
+            return model
+    return None
 
 
 def _call_provider(prompt: str, settings: DigestSettings, per_topic: dict[str, Any]) -> str:
@@ -193,9 +197,11 @@ def _call_openai_compatible(
         or os.environ.get("OPENAI_BASE_URL")
         or "https://api.openai.com/v1"
     ).rstrip("/")
-    key = os.environ.get(settings.api_key_env) or os.environ.get("OPENAI_API_KEY")
+    key = first_env(settings.api_key_env, "LLM_API_KEY", "OPENAI_API_KEY")
     if not key:
-        raise DigestUnavailable(f"未配置 API key（环境变量 {settings.api_key_env} 或 OPENAI_API_KEY）")
+        raise DigestUnavailable(
+            f"未配置 API key（环境变量 {settings.api_key_env}、LLM_API_KEY 或 OPENAI_API_KEY）"
+        )
     body = json.dumps(
         {
             "model": model,

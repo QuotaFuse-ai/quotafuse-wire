@@ -136,4 +136,4 @@ jobs:
 - 默认监听 `127.0.0.1`，IPv4 与 IPv6 回环都要处理（`::1` 同样视为本机）。
 - API 只读；跨域默认关闭，需要时显式配置 `QF_WIRE_CORS_ORIGINS`。
 - 日志与错误输出脱敏：不打印 `Authorization`、`api_key`、完整 URL 查询串。
-- `config/` 与 `.env` 在 `.gitignore` 中；用户配置里禁止出现明文密钥，密钥一律走环境变量引用。
+- 仓库中的 `.env` 只保留空值；含密钥的 `.env.local` 与 `config/*.local.yaml` 已被 `.gitignore` 忽略，用户配置里禁止出现明文密钥。
