@@ -17,43 +17,52 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from qf_wire.config.loader import load_sources, load_topics  # noqa: E402
+from qf_wire.config.loader import load_config  # noqa: E402
+from qf_wire.storage.sqlite import WireStore  # noqa: E402
 
 
 def export(include_scores: bool = False) -> dict:
-    topics = load_topics()
-    sources = load_sources()
+    config = load_config()
     scores: dict[str, dict] = {}
-    if include_scores:
-        from qf_wire.storage.sqlite import SourceScoreRepository
+    if include_scores and config.paths.db_path.is_file():
+        store = WireStore(config.paths.db_path)
+        try:
+            scores = {str(entry["source_id"]): entry for entry in store.source_scores()}
+        finally:
+            store.close()
 
-        scores = SourceScoreRepository().all_scores()
+    def topic_of(source_id: str, fallback: str | None) -> str | None:
+        if fallback:
+            return fallback
+        for topic in config.topics:
+            if source_id in topic.sources:
+                return topic.id
+        return None
 
     payload = {
         "version": 1,
         "topics": [
             {
-                "id": t["id"],
-                "name": t["name"],
-                "legacy_key": t.get("legacy_key"),
-                "aliases": t.get("aliases", []),
-                "keywords": t.get("keywords", []),
+                "id": topic.id,
+                "name": topic.name,
+                "legacy_key": topic.legacy_key,
+                "aliases": topic.aliases,
+                "keywords": topic.keywords,
             }
-            for t in topics.values()
+            for topic in config.topics
         ],
         "sources": [
             {
-                "id": s["id"],
-                "name": s["name"],
-                "topic": s.get("topic"),
-                "type": s.get("type", "rss"),
-                "url": s.get("url"),
-                "weight": s.get("weight", 1.0),
-                "enabled": s.get("enabled", True),
-                **({"score": scores[s["id"]]} if s["id"] in scores else {}),
+                "id": source.id,
+                "name": source.name,
+                "topic": topic_of(source.id, source.topic),
+                "type": source.type,
+                "url": source.url,
+                "weight": source.weight,
+                "enabled": source.enabled,
+                **({"score": scores[source.id]} if source.id in scores else {}),
             }
-            for s in sources
-            if s.get("url")
+            for source in config.sources
         ],
     }
     return payload
