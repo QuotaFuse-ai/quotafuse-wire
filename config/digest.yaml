@@ -4,7 +4,7 @@
 digest:
   version: 1
   provider: claude-cli
-  default_model: user-model
+  default_model: user-model   # 占位符：用 CLI 默认模型；填真实模型名才会转发给 provider
   language: zh
   max_items_per_topic: 12
   timeout_sec: 180
@@ -17,6 +17,7 @@ digest:
     semiconductor:
       prompt_file: prompts/semiconductor.md
       output_schema: TopicDigest
+      model: user-model          # 可选：按赛道覆盖 default_model
     robotics:
       prompt_file: prompts/default.md
       output_schema: TopicDigest
@@ -43,7 +44,7 @@ digest:
       output_schema: TopicDigest
     macro:
       prompt_file: prompts/policy.md
-      output_schema: TopicDigest
+      output_schema: BriefDigest  # 政策简报只保留摘要与要点，条目由本地数据补齐
     science:
       prompt_file: prompts/default.md
       output_schema: TopicDigest

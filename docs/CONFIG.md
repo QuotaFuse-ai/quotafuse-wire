@@ -61,6 +61,19 @@ digest:
 
 未在 `topics` 中出现的赛道使用 `default` 条目。
 
+赛道条目可覆盖的字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `prompt_file` | 该赛道使用的提示词文件；相对路径以仓库根目录为基准 |
+| `model` | 传给 provider 的模型名；`claude-cli` 会原样转发为 `--model`。`user-model` 是占位符，表示“用 CLI/接口自己的默认模型”，不会转发 |
+| `output_schema` | `TopicDigest`（摘要 + 要点 + 条目）或 `BriefDigest`（摘要 + 要点，条目由本地数据补齐） |
+
+## 并发采集
+
+全局并发度由环境变量 `QF_WIRE_FETCH_CONCURRENCY` 控制（默认 24，范围 1..64；`qfw run --max-workers` 可临时覆盖）。
+所有请求共享一个 `aiohttp.ClientSession`，单主机最多 `limit_per_host=4` 个连接；单源超时与重试仍由 `sources.yaml` 的 `timeout_sec` / `retries` 决定。
+
 ## schedule.yaml
 
 ```yaml

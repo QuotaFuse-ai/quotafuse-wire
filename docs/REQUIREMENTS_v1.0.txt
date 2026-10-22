@@ -228,7 +228,7 @@ qfw config migrate               # 从早期版本旧配置迁移
 
 支持 --output json|table|csv；
 
-退出码：0 成功、2 参数错误、3 配置错误、4 源不可用、8 部分源失败；
+退出码：0 成功、2 参数错误、3 配置错误、4 源不可用、6 对象不存在、8 部分源失败；
 
 qfw mcp stdio 的 stdout 只输出 MCP 协议报文。
 

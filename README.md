@@ -48,7 +48,7 @@ QuotaFuse Council     → 投研合议层（多角色分析、辩论、回测、
 | 能力 | 说明 |
 | --- | --- |
 | 模块化内核 | `src/qf_wire/` 分层：core / sources / pipeline / digest / render / cli / mcp / web / provider / storage / config，各层可独立替换与测试 |
-| 并发采集 | `asyncio + aiohttp` 并发拉取 100+ 信源，秒级完成；保留标准库降级路径，无重依赖也能运行 |
+| 并发采集 | `asyncio + aiohttp` 并发拉取 100+ 信源；本地 106 源实测 21.4s → 1.0s（并发 24），并发度可用 `QF_WIRE_FETCH_CONCURRENCY` 调整 |
 | 单源容错 | 每个信源独立超时、重试与降级标记；任一源失效只降级该源，整轮采集继续 |
 | 配置化赛道与信源 | `config/topics.yaml` / `config/sources.yaml` 定义 12 大赛道与 100+ 信源，增删赛道或 RSS 源无需改代码 |
 | 按赛道提炼 | `config/digest.yaml` 为每个赛道配置 prompt、模型与输出结构，提炼规则可演进 |
@@ -144,7 +144,7 @@ qfw config migrate               # 迁移早期版本的配置文件
 
 - 结构化结果写 stdout，日志写 stderr；
 - 支持 `--output json|table|csv`；
-- 退出码：`0` 成功、`2` 参数错误、`3` 配置错误、`4` 源不可用、`8` 部分源失败；
+- 退出码：`0` 成功、`2` 参数错误、`3` 配置错误、`4` 源不可用、`6` 对象不存在（如事件 id）、`8` 部分源失败；
 - `qfw mcp stdio` 的 stdout 只输出 MCP 协议报文。
 
 ## 配置

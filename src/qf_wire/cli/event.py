@@ -1,4 +1,4 @@
-"""qfw event：查看事件聚合与多源时间线（M1 轻量版）。"""
+"""qfw event：事件列表、事件详情与多源时间线。"""
 from __future__ import annotations
 
 from typing import Any
@@ -7,7 +7,14 @@ import typer
 
 from qf_wire.cli.context import AppContext, emit_json, emit_mapping, emit_rows, parse_day
 from qf_wire.core.errors import NotFoundError
+from qf_wire.core.models import Event, SourceItem
 from qf_wire.core.scheduler import today_beijing
+
+event_app = typer.Typer(
+    help="查看事件聚合与多源时间线",
+    no_args_is_help=False,
+    invoke_without_command=True,
+)
 
 EVENT_COLUMNS = [
     ("event_id", "event_id"),
@@ -26,72 +33,133 @@ TIMELINE_COLUMNS = [
 ]
 
 
-def event_command(
-    ctx: typer.Context,
-    event_id: str = typer.Argument(None, help="事件 id；缺省时列出当天事件"),
-    topic: str = typer.Option(None, "--topic", "-t", help="列出时按赛道过滤"),
-    day: str = typer.Option(None, "--date", help="列出时的日期，默认北京时间今天"),
-    limit: int = typer.Option(50, "--limit", min=1, max=500),
-) -> int:
-    app_ctx: AppContext = ctx.obj
+def _event_row(event: Event) -> dict[str, Any]:
+    return {
+        "event_id": event.event_id,
+        "topic": event.topic,
+        "title": event.title,
+        "sources": event.source_count,
+        "confidence": event.confidence,
+        "last_seen": event.last_seen.isoformat() if event.last_seen else "",
+    }
+
+
+def _timeline_rows(items: list[SourceItem]) -> list[dict[str, Any]]:
+    return [
+        {
+            "published_at": item.published_at.isoformat() if item.published_at else "",
+            "source_id": item.source_id or ",".join(item.sources),
+            "title": item.title,
+            "url": item.url,
+        }
+        for item in items
+    ]
+
+
+def _list_events(app_ctx: AppContext, topic: str | None, day: str | None, limit: int) -> None:
     config = app_ctx.config()
+    topic_id = config.topic(topic).id if topic else None
+    target_day = parse_day(day) or today_beijing()
     store = app_ctx.open_store()
     try:
-        if event_id:
-            event = store.get_event(event_id)
-            if event is None:
-                raise NotFoundError(f"事件不存在: {event_id}")
-            timeline = store.event_timeline(event_id)
-            payload: dict[str, Any] = {
-                "event": event.model_dump(mode="json"),
-                "timeline": [item.model_dump(mode="json") for item in timeline],
-            }
-            timeline_rows = [
-                {
-                    "published_at": item.published_at.isoformat() if item.published_at else "",
-                    "source_id": item.source_id,
-                    "title": item.title,
-                    "url": item.url,
-                }
-                for item in timeline
-            ]
-            if app_ctx.output == "json":
-                emit_json(payload)
-            elif app_ctx.output == "csv":
-                emit_rows(timeline_rows, TIMELINE_COLUMNS, "csv")
-            else:
-                emit_mapping(
-                    {
-                        "event_id": event.event_id,
-                        "topic": event.topic,
-                        "title": event.title,
-                        "sources": event.source_count,
-                        "confidence": event.confidence,
-                    },
-                    "table",
-                )
-                emit_rows(timeline_rows, TIMELINE_COLUMNS, "table")
-            return 0
-
-        target_day = parse_day(day) or today_beijing()
-        topic_id = config.topic(topic).id if topic else None
         events = store.events_for_topic(topic=topic_id, day=target_day, limit=limit)
     finally:
         store.close()
 
-    rows = [
-        {
-            "event_id": event.event_id,
-            "topic": event.topic,
-            "title": event.title,
-            "sources": event.source_count,
-            "confidence": event.confidence,
-            "last_seen": event.last_seen.isoformat() if event.last_seen else "",
-        }
-        for event in events
-    ]
+    rows = [_event_row(event) for event in events]
     if app_ctx.output == "json":
         emit_json({"date": target_day.isoformat(), "count": len(rows), "events": rows})
     else:
         emit_rows(rows, EVENT_COLUMNS, app_ctx.output)
+
+
+def _require_event(store: Any, event_id: str) -> Event:
+    event = store.get_event(event_id)
+    if event is None:
+        raise NotFoundError(f"事件不存在: {event_id}")
+    return event
+
+
+@event_app.callback()
+def _event_root(
+    ctx: typer.Context,
+    topic: str = typer.Option(None, "--topic", "-t", help="列出时按赛道过滤"),
+    day: str = typer.Option(None, "--date", help="列出时的日期，默认北京时间今天"),
+    limit: int = typer.Option(50, "--limit", min=1, max=500, help="列出的最大条数"),
+) -> None:
+    if ctx.invoked_subcommand is not None:
+        return
+    _list_events(ctx.obj, topic, day, limit)
+
+
+@event_app.command("list")
+def list_events(
+    ctx: typer.Context,
+    topic: str = typer.Option(None, "--topic", "-t", help="按赛道过滤"),
+    day: str = typer.Option(None, "--date", help="日期，默认北京时间今天"),
+    limit: int = typer.Option(50, "--limit", min=1, max=500, help="最大条数"),
+) -> int:
+    _list_events(ctx.obj, topic, day, limit)
+    return 0
+
+
+@event_app.command("show")
+def show_event(
+    ctx: typer.Context,
+    event_id: str = typer.Argument(..., help="事件 id"),
+) -> int:
+    app_ctx: AppContext = ctx.obj
+    store = app_ctx.open_store()
+    try:
+        event = _require_event(store, event_id)
+        reports = store.event_timeline(event_id)
+    finally:
+        store.close()
+
+    rows = _timeline_rows(reports)
+    if app_ctx.output == "json":
+        emit_json(
+            {
+                "event": event.model_dump(mode="json"),
+                "timeline": [item.model_dump(mode="json") for item in reports],
+            }
+        )
+    elif app_ctx.output == "csv":
+        emit_rows(rows, TIMELINE_COLUMNS, "csv")
+    else:
+        emit_mapping(
+            {
+                "event_id": event.event_id,
+                "topic": event.topic,
+                "title": event.title,
+                "sources": ", ".join(event.sources),
+                "source_count": event.source_count,
+                "confidence": event.confidence,
+                "first_seen": event.first_seen.isoformat() if event.first_seen else "",
+                "last_seen": event.last_seen.isoformat() if event.last_seen else "",
+            },
+            "table",
+        )
+        emit_rows(rows, TIMELINE_COLUMNS, "table")
+    return 0
+
+
+@event_app.command("timeline")
+def show_timeline(
+    ctx: typer.Context,
+    event_id: str = typer.Argument(..., help="事件 id"),
+) -> int:
+    app_ctx: AppContext = ctx.obj
+    store = app_ctx.open_store()
+    try:
+        _require_event(store, event_id)
+        reports = store.event_timeline(event_id)
+    finally:
+        store.close()
+
+    rows = _timeline_rows(reports)
+    if app_ctx.output == "json":
+        emit_json({"event_id": event_id, "count": len(rows), "timeline": rows})
+    else:
+        emit_rows(rows, TIMELINE_COLUMNS, app_ctx.output)
     return 0
