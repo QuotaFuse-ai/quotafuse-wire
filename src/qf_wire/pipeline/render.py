@@ -1,4 +1,4 @@
-"""看板投影：生成兼容 investment-news 的 data/data.js。"""
+"""看板投影：生成看板所需的 data/data.js。"""
 from __future__ import annotations
 
 import json

@@ -1,4 +1,4 @@
-"""旧 investment-news 配置到 Wire YAML 的一次性迁移。
+"""旧版 JSON 配置到 Wire YAML 的一次性迁移。
 
 规则见 docs/MIGRATION.md：
 - sources.json 的行业 → topics.yaml，信源 → sources.yaml；
