@@ -19,6 +19,7 @@ classifiers = [
 dependencies = [
     "aiohttp>=3.9",
     "apscheduler>=3.10",
+    "jsonschema>=4.20",
     "mcp>=1.2",
     "pydantic>=2.5",
     "pyyaml>=6.0",
