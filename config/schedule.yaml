@@ -1,0 +1,19 @@
+# 定时任务（M4）。默认关闭，开启后由内置调度器（APScheduler）在本地执行。
+# 也可直接使用系统 cron 模板，见 docs/DEPLOYMENT.md。
+schedule:
+  version: 1
+  enabled: false
+  timezone: Asia/Shanghai
+  jobs:
+    - id: daily_run
+      cron: "0 7 * * *"
+      command: run
+      options:
+        digest: true
+        output: data.js
+      enabled: true
+    - id: weekly_source_check
+      cron: "0 6 * * 1"
+      command: sources validate
+      options: {}
+      enabled: false
