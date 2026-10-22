@@ -10,6 +10,11 @@ digest:
   timeout_sec: 180
   retries: 2
   output_schema: TopicDigest
+  # provider: gateway 时使用生态统一模型网关；不可用时自动降级 claude-cli。
+  # 密钥只从环境变量读取，禁止写进本文件。
+  gateway:
+    base_url: ${QF_WIRE_MODEL_GATEWAY_URL}
+    api_key_env: QF_WIRE_MODEL_GATEWAY_KEY
   topics:
     ai:
       prompt_file: prompts/default.md

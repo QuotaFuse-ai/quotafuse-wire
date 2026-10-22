@@ -24,6 +24,7 @@
   <a href="#快速开始">快速开始</a> ·
   <a href="#cli">CLI</a> ·
   <a href="#mcp-工具">MCP</a> ·
+  <a href="#作为-agent-skill-使用">Agent Skill</a> ·
   <a href="#文档">文档</a>
 </p>
 
@@ -184,9 +185,27 @@ class WireEnvelope(BaseModel):
 | 工具 | 说明 |
 | --- | --- |
 | `wire_get_digest(topic, date)` | 获取某赛道某日要点 |
-| `wire_search_events(keyword, window)` | 查询事件的多源报道 |
+| `wire_search_events(keyword, window, topic)` | 查询事件的多源报道 |
 | `wire_get_timeline(event_id)` | 获取事件时间线 |
-| `wire_list_sources()` | 列出信源与质量评分 |
+| `wire_list_sources(topic)` | 列出信源与质量评分 |
+
+## 作为 Agent Skill 使用
+
+`skills/quotafuse-wire/` 是一份可直接挂载到支持 Skill 的 Agent 上的技能包，让 Agent 知道**何时取资讯、按什么顺序取、如何标注可信度**，而不是自由发挥。
+
+```text
+skills/quotafuse-wire/
+├── SKILL.md                    # YAML frontmatter（name / description）+ 操作 SOP
+├── references/digest-format.md # WireEnvelope 与日报字段、枚举、最小示例
+└── examples/read-daily-brief.md# CLI 与 MCP 两条路径的端到端示例
+```
+
+挂载方式按宿主而定，常见两种：
+
+- **目录挂载**：把 `skills/quotafuse-wire/` 复制或软链到宿主的技能目录（如 `~/.claude/skills/`、项目的 `.agent/skills/`），宿主按 `SKILL.md` 的 `description` 决定何时加载。
+- **仓库内引用**：Agent 直接读取仓库中的 `skills/quotafuse-wire/SKILL.md`，按其 SOP 调用 MCP 工具或 `qfw` 命令。
+
+无论哪种方式，运行前提都一样：本机已安装 `qfw`、已有归档，并配置 `qfw mcp stdio`（或 `qfw mcp http --port 8791`）。技能只做资讯解释，不输出买卖建议。
 
 ## 里程碑
 
@@ -208,6 +227,7 @@ quota-fuse-wire/
 ├── docs/          # 架构、配置、信源、MCP、Provider、迁移、部署
 ├── src/qf_wire/   # core / sources / pipeline / digest / render / cli / mcp / web / provider / storage / config
 ├── compatibility/ # 旧版脚本入口兼容层
+├── skills/        # Agent Skill：quotafuse-wire
 ├── data/          # 运行数据（gitignore）
 ├── tests/         # unit / integration / contract / compat
 └── scripts/       # 信源校验、导出、迁移

@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -62,6 +63,8 @@ class DigestSettings:
     topics: dict[str, dict[str, Any]] = field(default_factory=dict)
     api_base: str | None = None
     api_key_env: str = "QF_WIRE_API_KEY"
+    gateway_base_url: str | None = None
+    gateway_api_key_env: str = "QF_WIRE_MODEL_GATEWAY_KEY"
 
     def for_topic(self, topic_id: str) -> dict[str, Any]:
         """合并 default 与赛道专属配置。"""
@@ -233,6 +236,9 @@ def _parse_digest(raw: dict[str, Any]) -> DigestSettings:
     topics = data.get("topics") or {}
     if not isinstance(topics, dict):
         raise ConfigError("digest.yaml digest.topics 必须是对象")
+    gateway = data.get("gateway") or {}
+    if not isinstance(gateway, dict):
+        raise ConfigError("digest.yaml digest.gateway 必须是对象")
     try:
         return DigestSettings(
             provider=str(data.get("provider") or "claude-cli"),
@@ -245,9 +251,24 @@ def _parse_digest(raw: dict[str, Any]) -> DigestSettings:
             topics={str(key): dict(value) for key, value in topics.items() if isinstance(value, dict)},
             api_base=data.get("api_base"),
             api_key_env=str(data.get("api_key_env") or "QF_WIRE_API_KEY"),
+            gateway_base_url=_expand_env(gateway.get("base_url")),
+            gateway_api_key_env=str(gateway.get("api_key_env") or "QF_WIRE_MODEL_GATEWAY_KEY"),
         )
     except (TypeError, ValueError) as exc:
         raise ConfigError(f"digest.yaml 配置无效: {exc}") from exc
+
+
+_ENV_PLACEHOLDER = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+
+
+def _expand_env(value: Any) -> str | None:
+    """展开 ``${VAR}``；变量未设置时保留占位符，由调用方报“未配置”。"""
+    if value is None:
+        return None
+    return _ENV_PLACEHOLDER.sub(
+        lambda match: os.environ.get(match.group(1), match.group(0)),
+        str(value),
+    )
 
 
 def _format_validation(exc: ValidationError) -> str:
