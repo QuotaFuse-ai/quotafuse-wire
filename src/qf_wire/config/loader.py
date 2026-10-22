@@ -15,6 +15,7 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
+from qf_wire.config.dotenv import first_env
 from qf_wire.core.errors import ConfigError, ParamError
 from qf_wire.core.models import Source, Topic
 
@@ -235,16 +236,20 @@ def _parse_digest(raw: dict[str, Any]) -> DigestSettings:
         raise ConfigError("digest.yaml digest.topics 必须是对象")
     try:
         return DigestSettings(
-            provider=str(data.get("provider") or "claude-cli"),
-            default_model=str(data.get("default_model") or "user-model"),
+            provider=first_env("QF_WIRE_DIGEST_PROVIDER", "LLM_PROVIDER")
+            or str(data.get("provider") or "claude-cli"),
+            default_model=first_env("QF_WIRE_DIGEST_MODEL", "LLM_MODEL")
+            or str(data.get("default_model") or "user-model"),
             language=str(data.get("language") or "zh"),
             max_items=int(data.get("max_items_per_topic") or 12),
             timeout_sec=int(data.get("timeout_sec") or 180),
             retries=int(data.get("retries") or 0),
             output_schema=str(data.get("output_schema") or "TopicDigest"),
             topics={str(key): dict(value) for key, value in topics.items() if isinstance(value, dict)},
-            api_base=data.get("api_base"),
-            api_key_env=str(data.get("api_key_env") or "QF_WIRE_API_KEY"),
+            api_base=first_env("QF_WIRE_API_BASE", "OPENAI_BASE_URL", "LLM_BASE_URL")
+            or data.get("api_base"),
+            api_key_env=first_env("QF_WIRE_API_KEY_ENV")
+            or str(data.get("api_key_env") or "QF_WIRE_API_KEY"),
         )
     except (TypeError, ValueError) as exc:
         raise ConfigError(f"digest.yaml 配置无效: {exc}") from exc

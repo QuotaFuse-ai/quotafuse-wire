@@ -96,20 +96,47 @@
   .nav-count.warn { color: var(--danger); }
   .sidebar-foot { margin: 22px 10px 0; color: var(--muted); font-size: 11px; line-height: 1.6; }
 
-  .main { padding: 20px 26px 64px; min-width: 0; max-width: 1080px; }
+  .main { padding: 20px 26px 64px; min-width: 0; }
   .view-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-bottom: 14px; }
   .view-head h2 { margin: 0; font-size: 20px; }
   .view-head .sub { color: var(--muted); font-size: 12.5px; }
+  .view-head .topic-meta {
+    flex-basis: 100%; color: var(--muted); font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
 
   .panel {
     background: var(--panel); border: 1px solid var(--line);
     border-radius: 14px; padding: 16px 18px; margin-bottom: 16px;
   }
   .panel h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .4px; }
-  #digest { white-space: pre-wrap; line-height: 1.7; font-size: 14px; }
-  #points { margin: 10px 0 0; padding-left: 20px; color: #c9d4f2; font-size: 13.5px; line-height: 1.65; }
+  .panel-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+  .panel-head h3 { margin: 0; }
+  .panel-note { color: var(--muted); font-size: 11.5px; }
+  .digest-body {
+    display: grid; gap: 20px; align-items: start;
+    grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr);
+  }
+  .digest-body.single { grid-template-columns: minmax(0, 1fr); }
+  .digest-text { white-space: pre-wrap; line-height: 1.75; font-size: 14px; }
+  .digest-summary { margin: 0; }
+  .digest-warn { margin: 10px 0 0; color: var(--warn); font-size: 12.5px; line-height: 1.6; }
+  .digest-points { margin: 0; padding-left: 18px; color: #c9d4f2; font-size: 13.5px; line-height: 1.7; }
+  .digest-points li { margin-bottom: 8px; }
+  .empty-state {
+    border: 1px dashed var(--line); border-radius: 10px;
+    padding: 16px 18px; color: var(--muted); font-size: 13px; line-height: 1.8;
+  }
+  .empty-state strong { color: var(--text); font-weight: 600; }
+  .empty-state code {
+    color: var(--accent); background: rgba(34, 211, 238, .08);
+    padding: 1px 6px; border-radius: 6px; font-size: 12px;
+  }
 
-  .items { display: grid; gap: 12px; }
+  .items {
+    display: grid; gap: 12px; align-items: start;
+    grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  }
   .item {
     background: var(--panel); border: 1px solid var(--line); border-radius: 13px;
     padding: 14px 16px; transition: border-color .15s ease, transform .15s ease;
@@ -176,6 +203,7 @@
     .nav-title { margin-top: 8px; }
     .sidebar-foot { display: none; }
     .main { padding: 16px 14px 52px; }
+    .items, .digest-body { grid-template-columns: minmax(0, 1fr); }
     header .meta { display: none; }
   }
 </style>
@@ -346,23 +374,80 @@
     search.style.display = isTopic ? "" : "none";
   }
 
-  function viewHead(title, subtitle) {
+  function viewHead(title, subtitle, meta) {
     var head = el("div", "view-head");
     head.appendChild(el("h2", null, title));
     if (subtitle) head.appendChild(el("span", "sub", subtitle));
+    if (meta) head.appendChild(el("div", "topic-meta", meta));
     return head;
+  }
+
+  function topicSourceCount(industry) {
+    var count = 0;
+    (data.sourceStatus || []).forEach(function (row) {
+      if (row.topic === industry.id || row.topic === industry.key) count += 1;
+    });
+    return count;
+  }
+
+  function topicMeta(industry) {
+    var parts = [];
+    var sources = topicSourceCount(industry);
+    if (sources) parts.push("共 " + sources + " 个信源");
+    parts.push("本栏 " + ((industry.items || []).length) + " 条");
+    if (data.generatedAt) parts.push("更新 " + data.generatedAt);
+    parts.push("本地抓取");
+    return parts.join(" · ");
+  }
+
+  function digestState(industry) {
+    var summary = (industry && industry.summary) || "";
+    var keyPoints = (industry && industry.key_points) || [];
+    if (industry && industry.digest_state) return industry.digest_state;
+    return (summary || keyPoints.length) ? "ok" : "missing";
   }
 
   function renderDigest(industry, main) {
     var summary = (industry && industry.summary) || "";
     var keyPoints = (industry && industry.key_points) || [];
-    if (!summary && !keyPoints.length) return;
+    var state = digestState(industry);
     var panel = el("section", "panel");
-    panel.appendChild(el("h3", null, "今日提炼"));
-    panel.appendChild(el("div", null, summary)).id = "digest";
+    var head = el("div", "panel-head");
+    head.appendChild(el("h3", null, (industry.name || industry.key || "") + " 今日要点"));
+    head.appendChild(el("span", "panel-note", state === "ok" ? "由模型提炼 · 跨源去重" : ""));
+    panel.appendChild(head);
+
+    if (state === "missing") {
+      var hint = el("div", "empty-state");
+      hint.appendChild(el("strong", null, "今日要点尚未生成。"));
+      hint.appendChild(document.createTextNode(
+        "它由你自己配置的大模型阅读当日资讯后提炼，不是抓取得到的。在仓库根目录的 .env 里填好 QF_WIRE_API_BASE 和 QF_WIRE_API_KEY，"
+        + "并在 config/digest.yaml 里设置 provider 与 default_model，然后运行 "
+      ));
+      hint.appendChild(el("code", null, "qfw digest --topic " + (industry.id || industry.key)));
+      hint.appendChild(document.createTextNode(" 即可生成。"));
+      panel.appendChild(hint);
+      main.appendChild(panel);
+      return;
+    }
+
+    if (!summary && !keyPoints.length) {
+      panel.appendChild(el("div", "empty-state", "本次提炼没有返回内容，可稍后重新运行 qfw digest。"));
+      main.appendChild(panel);
+      return;
+    }
+
+    var body = el("div", "digest-body" + (keyPoints.length ? "" : " single"));
+    var text = el("div", "digest-text");
+    if (summary) text.appendChild(el("p", "digest-summary", summary));
+    if (state === "partial") {
+      var reason = industry.digest_error ? "本次提炼失败：" + industry.digest_error : "本次提炼未能完整完成，以下为已采集资讯。";
+      text.appendChild(el("p", "digest-warn", reason + " 检查模型地址与密钥后重新运行 qfw digest。"));
+    }
+    body.appendChild(text);
+
     if (keyPoints.length) {
-      var points = el("ul", null);
-      points.id = "points";
+      var points = el("ul", "digest-points");
       keyPoints.forEach(function (point) {
         var li = el("li", null, point.text || "");
         var confidence = point.confidence || "medium";
@@ -370,8 +455,9 @@
         li.appendChild(el("span", "badge " + confidence, confidence));
         points.appendChild(li);
       });
-      panel.appendChild(points);
+      body.appendChild(points);
     }
+    panel.appendChild(body);
     main.appendChild(panel);
   }
 
@@ -462,8 +548,7 @@
       main.appendChild(el("div", "empty", "暂无采集数据，请先运行 qfw run"));
       return;
     }
-    var info = figures();
-    main.appendChild(viewHead(industry.name || industry.key, "共 " + (industry.items || []).length + " 条资讯"));
+    main.appendChild(viewHead(industry.name || industry.key, null, topicMeta(industry)));
     renderDigest(industry, main);
     renderItems(industry, main);
   }

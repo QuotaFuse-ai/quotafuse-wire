@@ -22,6 +22,7 @@ from qf_wire.cli.run import run_command
 from qf_wire.cli.serve import serve_command
 from qf_wire.cli.sources import sources_app
 from qf_wire.cli.topics import topics_app
+from qf_wire.config.dotenv import load_dotenv
 from qf_wire.config.loader import resolve_paths
 from qf_wire.config.migrate import auto_migrate
 from qf_wire.core.errors import EXIT_CONFIG, EXIT_PARAM, WireError
@@ -83,6 +84,7 @@ app.command("mcp")(mcp_command)
 
 def cli(argv: list[str] | None = None) -> int:
     """执行一次 CLI 调用并返回进程退出码。"""
+    load_dotenv()
     args = list(sys.argv[1:] if argv is None else argv)
     try:
         result = app(args=args, standalone_mode=False)
