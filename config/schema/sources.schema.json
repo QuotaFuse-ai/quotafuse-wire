@@ -24,9 +24,9 @@
         "required": ["id", "name", "type", "url"],
         "additionalProperties": false,
         "properties": {
-          "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$" },
           "name": { "type": "string", "minLength": 1 },
-          "topic": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+          "topic": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$" },
           "type": { "type": "string", "enum": ["rss", "html", "api"] },
           "url": { "type": "string", "pattern": "^https?://" },
           "timeout_sec": { "type": "integer", "minimum": 1, "maximum": 120 },
