@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from qf_wire.core.cleaner import clean_items
-from qf_wire.core.deduper import canonical_url, dedupe, stable_hash, title_fingerprint
+from qf_wire.core.cluster import build_events
+from qf_wire.core.deduper import dedupe
 from qf_wire.core.models import Event, SourceItem
 from qf_wire.logging.setup import get_logger
 from qf_wire.sources.base import FetchResult
@@ -55,44 +56,6 @@ def process_items(
     if dropped > 0:
         logger.info("清洗去重：原始 %d 条，保留 %d 条（丢弃 %d）", len(raw), len(unique), dropped)
     return ProcessResult(items=unique, events=events, raw_count=len(raw), dropped=dropped)
-
-
-def build_events(items: list[SourceItem]) -> list[Event]:
-    """按赛道 + 标题指纹聚合为事件；M1 为轻量分组，M2 再做相似度聚类。"""
-    grouped: dict[str, list[SourceItem]] = {}
-    for item in items:
-        fingerprint = title_fingerprint(item.title) or canonical_url(item.url)
-        event_id = stable_hash("event", item.topic, fingerprint)
-        grouped.setdefault(event_id, []).append(item)
-
-    events: list[Event] = []
-    for event_id, group in grouped.items():
-        sources: list[str] = []
-        for item in group:
-            for source in item.sources or [item.source_id]:
-                if source and source not in sources:
-                    sources.append(source)
-        times = [item.published_at for item in group if item.published_at is not None]
-        for item in group:
-            item.event_id = event_id
-            if len(sources) >= 2 and item.confidence != "high":
-                item.confidence = "high"
-        confidence = "high" if len(sources) >= 2 else (group[0].confidence if group else "medium")
-        events.append(
-            Event(
-                event_id=event_id,
-                topic=group[0].topic if group else "",
-                title=group[0].title if group else "",
-                items=group,
-                sources=sources,
-                source_count=len(sources),
-                confidence=confidence,
-                first_seen=min(times) if times else None,
-                last_seen=max(times) if times else None,
-            )
-        )
-    events.sort(key=lambda event: event.last_seen.timestamp() if event.last_seen else 0.0, reverse=True)
-    return events
 
 
 def sort_items(items: list[SourceItem]) -> list[SourceItem]:
