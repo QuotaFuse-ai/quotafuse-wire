@@ -1,7 +1,8 @@
 """CLI 事件查看与历史事件维度：show / timeline / list / exit code 6。"""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import json
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -87,6 +88,62 @@ def seeded(tmp_path: Path) -> tuple[Path, Path]:
     return config_dir, data_dir
 
 
+DAY1 = date(2026, 10, 21)
+DAY2 = date(2026, 10, 22)
+
+
+@pytest.fixture()
+def seeded_two_days(tmp_path: Path) -> tuple[Path, Path]:
+    config_dir = write_config(tmp_path)
+    data_dir = tmp_path / "data"
+    early = _item("https://example.com/a", "Fab breaks ground", "feed_a", NOW)
+    late = _item("https://example.com/b", "New fab construction starts", "feed_b", LATER)
+    day1_event = Event(
+        event_id="evt-1",
+        topic="semi",
+        title=early.title,
+        items=[early],
+        sources=["feed_a"],
+        source_count=1,
+        confidence="medium",
+        first_seen=NOW,
+        last_seen=NOW,
+    )
+    day2_event = Event(
+        event_id="evt-1",
+        topic="semi",
+        title=early.title,
+        items=[early, late],
+        sources=["feed_a", "feed_b"],
+        source_count=2,
+        confidence="high",
+        first_seen=NOW,
+        last_seen=LATER,
+    )
+    store = WireStore(data_dir / "wire.db")
+    try:
+        for run_id, day, items, event in (
+            ("run-1", DAY1, [early], day1_event),
+            ("run-2", DAY2, [early, late], day2_event),
+        ):
+            store.record_run(
+                run_id=run_id,
+                day=day,
+                topic="semi",
+                mode="sources",
+                status="ok",
+                exit_code=0,
+                started_at=NOW,
+                finished_at=LATER,
+                results=[_result("feed_a", items)],
+                items_by_topic={"semi": items},
+                events_by_topic={"semi": [event]},
+            )
+    finally:
+        store.close()
+    return config_dir, data_dir
+
+
 def _run(config_dir: Path, data_dir: Path, *args: str) -> int:
     return cli(
         [
@@ -150,6 +207,96 @@ def test_missing_event_timeline_exits_6(seeded: tuple[Path, Path]) -> None:
 def test_event_unknown_subcommand_is_parameter_error(seeded: tuple[Path, Path]) -> None:
     config_dir, data_dir = seeded
     assert _run(config_dir, data_dir, "event", "nope") == EXIT_PARAM
+
+
+def test_event_show_scopes_timeline_by_date(
+    seeded_two_days: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    config_dir, data_dir = seeded_two_days
+
+    assert (
+        _run(
+            config_dir,
+            data_dir,
+            "--output",
+            "json",
+            "event",
+            "show",
+            "evt-1",
+            "--date",
+            DAY1.isoformat(),
+        )
+        == EXIT_OK
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["event"]["source_count"] == 1
+    assert [item["url"] for item in payload["timeline"]] == ["https://example.com/a"]
+
+    assert _run(config_dir, data_dir, "--output", "json", "event", "show", "evt-1") == EXIT_OK
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["event"]["source_count"] == 2
+    assert len(payload["timeline"]) == 2
+
+
+def test_event_timeline_date_selects_day_and_reports_missing(
+    seeded_two_days: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    config_dir, data_dir = seeded_two_days
+
+    assert (
+        _run(
+            config_dir,
+            data_dir,
+            "--output",
+            "csv",
+            "event",
+            "timeline",
+            "evt-1",
+            "--date",
+            DAY1.isoformat(),
+        )
+        == EXIT_OK
+    )
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert len(lines) == 2
+    assert "https://example.com/a" in lines[1]
+
+    assert (
+        _run(
+            config_dir,
+            data_dir,
+            "event",
+            "timeline",
+            "evt-1",
+            "--date",
+            "2026-10-20",
+        )
+        == EXIT_NOT_FOUND
+    )
+
+
+def test_event_list_keeps_previous_day_after_recollection(
+    seeded_two_days: tuple[Path, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    config_dir, data_dir = seeded_two_days
+
+    for day in (DAY1, DAY2):
+        assert (
+            _run(
+                config_dir,
+                data_dir,
+                "--output",
+                "json",
+                "event",
+                "list",
+                "--date",
+                day.isoformat(),
+            )
+            == EXIT_OK
+        )
+        payload = json.loads(capsys.readouterr().out)
+        assert payload["date"] == day.isoformat()
+        assert payload["count"] == 1
 
 
 def test_history_exposes_event_dimension(
