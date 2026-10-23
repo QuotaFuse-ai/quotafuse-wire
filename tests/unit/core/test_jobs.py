@@ -128,7 +128,8 @@ def test_execute_job_catches_handler_errors(tmp_path, monkeypatch) -> None:
 
 
 def test_digest_job_requires_collected_items(tmp_path) -> None:
-    config = load_config(write_config(tmp_path))
+    # 该用例会真实读库，数据目录必须隔离，否则本地已有数据时误判为 partial
+    config = load_config(write_config(tmp_path), data_dir=tmp_path / "data")
     job = ScheduleJob(id="digest", cron="0 8 * * *", command="digest")
 
     result = execute_job(config, job)
