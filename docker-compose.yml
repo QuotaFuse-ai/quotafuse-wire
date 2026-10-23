@@ -25,6 +25,8 @@ services:
       # 端口映射后容器看到的来源是 docker 网关地址；配合宿主只发布 127.0.0.1，
       # 外部仍不可直达。若接入不可信容器网络，请设为 false 并配置 QF_WIRE_API_TOKEN。
       QF_WIRE_ALLOW_PRIVATE_NETWORK: "${QF_WIRE_ALLOW_PRIVATE_NETWORK:-true}"
+      # 写接口令牌：留空时每次启动随机生成并注入看板页面
+      QF_WIRE_WRITE_TOKEN: "${QF_WIRE_WRITE_TOKEN:-}"
       # 模型凭证在容器内通过看板写入 data/.env.local，持久化在 /data
       QF_WIRE_DIGEST_PROVIDER: "${QF_WIRE_DIGEST_PROVIDER:-}"
       QF_WIRE_DIGEST_MODEL: "${QF_WIRE_DIGEST_MODEL:-}"
