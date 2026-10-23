@@ -45,7 +45,7 @@
 
 ## 测试
 
-- 全量：`0 passed`（合入安全分支后统计，本机 Python 3.14.6，`PYTHONPATH="../deps;src"`）。
+- 全量：`274 passed`（合入安全分支后统计，本机 Python 3.14.6，`PYTHONPATH="../deps;src"`）。
 - 新增覆盖：
   - `tests/unit/test_web_guard.py`：回环/公网/私网、健康检查豁免、token 必填与本机绕过、Bearer 大小写、CORS 解析、错误脱敏、绑定实例拒绝他人、共享实例校验 `X-QF-User-Token`、写令牌（缺失/正确/环境变量覆盖）、`Host` 头拒绝与放行。
   - `tests/unit/cli/test_token.py`：创建/复用/轮换、非法 id 与缺 `--user` 退出码 2、不产生越界目录。
