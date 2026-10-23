@@ -3,7 +3,14 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 
-from qf_wire.core.models import DigestItem, Event, KeyPoint, SourceItem, TopicDigest
+from qf_wire.core.models import (
+    DigestItem,
+    Event,
+    EventExplanation,
+    KeyPoint,
+    SourceItem,
+    TopicDigest,
+)
 from qf_wire.sources.base import FetchResult
 from qf_wire.storage.sqlite import MIGRATIONS_DIR, WireStore, split_sql
 
@@ -55,6 +62,7 @@ def test_initialize_applies_migrations(tmp_path) -> None:
         with store.engine.connect() as conn:
             versions = [row[0] for row in conn.exec_driver_sql("SELECT version FROM schema_migrations")]
         assert "0001_init" in versions
+        assert "0005_events_explanation" in versions
     finally:
         store.close()
 
@@ -235,6 +243,53 @@ def test_cross_day_recollection_keeps_previous_day_events(tmp_path) -> None:
                 entry.url == item.url
                 for entry in store.event_timeline(item.event_id, DAY1)
             )
+    finally:
+        store.close()
+
+
+def test_event_explanation_round_trip(tmp_path) -> None:
+    store = WireStore(tmp_path / "wire.db")
+    try:
+        item = _item("https://example.com/1", "TSMC expands 2nm capacity", event_id="evt-1")
+        explanation = EventExplanation(
+            reason="shared_entity",
+            shared_entities=["tsmc"],
+            title_similarity=0.71,
+            simhash_similarity=0.93,
+            threshold=0.56,
+            window_hours=168,
+        )
+        event = Event(
+            event_id="evt-1",
+            topic="semi",
+            title=item.title,
+            items=[item],
+            sources=["feed_a"],
+            source_count=1,
+            confidence="high",
+            first_seen=NOW,
+            last_seen=NOW,
+            explanation=explanation,
+        )
+        store.record_run(
+            run_id="run-1",
+            day=DAY1,
+            topic="semi",
+            mode="sources",
+            status="ok",
+            exit_code=0,
+            started_at=NOW,
+            finished_at=NOW,
+            results=[_result("feed_a", "ok", [item])],
+            items_by_topic={"semi": [item]},
+            events_by_topic={"semi": [event]},
+        )
+
+        stored = store.get_event("evt-1", DAY1)
+        assert stored is not None
+        assert stored.explanation == explanation
+        assert stored.explanation is not None
+        assert "共同实体：tsmc" in stored.explanation.summary()
     finally:
         store.close()
 

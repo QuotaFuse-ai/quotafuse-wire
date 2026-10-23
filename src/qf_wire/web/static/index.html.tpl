@@ -171,6 +171,7 @@
   .timeline .row a:hover { color: var(--accent); }
   .item details { margin-top: 10px; }
   .item details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  .explain { color: var(--muted); font-size: 12px; margin-top: 8px; }
   .empty { color: var(--muted); text-align: center; padding: 48px 0; font-size: 14px; }
 
   .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
@@ -603,8 +604,13 @@
       }
       if (item.summary) card.appendChild(el("div", "summary", item.summary));
       if (group.reports.length > 1) {
+        var explanations = (industry && industry.event_explanations) || {};
+        var explanation = explanations[item.event_id];
         var details = document.createElement("details");
         details.appendChild(el("summary", null, "事件时间线 · " + group.reports.length + " 篇报道"));
+        if (explanation && explanation.summary) {
+          details.appendChild(el("div", "explain", "归并依据：" + explanation.summary));
+        }
         details.appendChild(renderTimeline(group));
         card.appendChild(details);
       }

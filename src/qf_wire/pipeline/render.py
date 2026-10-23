@@ -38,6 +38,17 @@ def build_dashboard_payload(
         source_count = {
             event.event_id: event.source_count for event in events_by_topic.get(topic.id, [])
         }
+        explanations = {
+            event.event_id: {
+                "reason": event.explanation.reason,
+                "summary": event.explanation.summary(),
+                "shared_entities": event.explanation.shared_entities,
+                "title_similarity": event.explanation.title_similarity,
+                "simhash_similarity": event.explanation.simhash_similarity,
+            }
+            for event in events_by_topic.get(topic.id, [])
+            if event.explanation is not None
+        }
         projected = [_project_item(item, item_map, source_count) for item in items]
         industries.append(
             {
@@ -58,6 +69,7 @@ def build_dashboard_payload(
                 "digest_state": _digest_state(digest),
                 "digest_error": (digest.error or "") if digest else "",
                 "digest_generated_at": _stamp(digest.generated_at if digest else None),
+                "event_explanations": explanations,
                 "items": projected,
             }
         )

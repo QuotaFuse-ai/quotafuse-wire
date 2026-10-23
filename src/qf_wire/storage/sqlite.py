@@ -18,6 +18,7 @@ from qf_wire.core.cleaner import parse_datetime
 from qf_wire.core.models import (
     DigestItem,
     Event,
+    EventExplanation,
     KeyPoint,
     SourceItem,
     TopicDigest,
@@ -38,6 +39,27 @@ def _iso(value: datetime | None) -> str | None:
 
 def _day(value: date | str) -> str:
     return value.isoformat() if isinstance(value, date) else str(value)
+
+
+def _json_or_none(value: EventExplanation | None) -> str | None:
+    if value is None:
+        return None
+    return json.dumps(value.model_dump(mode="json"), ensure_ascii=False)
+
+
+def _load_explanation(raw: str | None) -> EventExplanation | None:
+    if not raw:
+        return None
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    try:
+        return EventExplanation.model_validate(data)
+    except ValueError:
+        return None
 
 
 def _event_time(event: Event) -> datetime:
@@ -251,14 +273,15 @@ class WireStore:
                     conn.execute(
                         text(
                             "INSERT INTO events (event_id, topic, day, title, sources, source_count, "
-                            "confidence, first_seen, last_seen, updated_at) VALUES "
+                            "confidence, first_seen, last_seen, explanation, updated_at) VALUES "
                             "(:event_id, :topic, :day, :title, :sources, :source_count, :confidence, "
-                            ":first_seen, :last_seen, :updated_at) "
+                            ":first_seen, :last_seen, :explanation, :updated_at) "
                             "ON CONFLICT(event_id, day) DO UPDATE SET topic=excluded.topic, "
                             "title=excluded.title, sources=excluded.sources, "
                             "source_count=excluded.source_count, "
                             "confidence=excluded.confidence, first_seen=excluded.first_seen, "
-                            "last_seen=excluded.last_seen, updated_at=excluded.updated_at"
+                            "last_seen=excluded.last_seen, explanation=excluded.explanation, "
+                            "updated_at=excluded.updated_at"
                         ),
                         {
                             "event_id": evt.event_id,
@@ -270,6 +293,7 @@ class WireStore:
                             "confidence": evt.confidence,
                             "first_seen": _iso(evt.first_seen),
                             "last_seen": _iso(evt.last_seen),
+                            "explanation": _json_or_none(evt.explanation),
                             "updated_at": _iso(now),
                         },
                     )
@@ -579,6 +603,7 @@ class WireStore:
     @classmethod
     def _row_to_event(cls, conn: Any, row: Any) -> Event:
         items = cls._items_for_event(conn, row["event_id"], row["day"], ascending=False)
+        explanation = _load_explanation(row["explanation"])
         return Event(
             event_id=row["event_id"],
             topic=row["topic"],
@@ -589,6 +614,7 @@ class WireStore:
             confidence=row["confidence"] or "medium",
             first_seen=parse_datetime(row["first_seen"]),
             last_seen=parse_datetime(row["last_seen"]),
+            explanation=explanation,
         )
 
     def load_source_scores(self) -> dict[str, SourceScore]:

@@ -15,6 +15,7 @@ from qf_wire import __version__
 from qf_wire.cli.config import config_app
 from qf_wire.cli.context import OUTPUT_FORMATS, AppContext
 from qf_wire.cli.digest import digest_command
+from qf_wire.cli.doctor import doctor_command
 from qf_wire.cli.event import event_app
 from qf_wire.cli.history import history_command
 from qf_wire.cli.mcp import mcp_app
@@ -83,6 +84,7 @@ def _root(
 
 app.command("run")(run_command)
 app.command("digest")(digest_command)
+app.command("doctor")(doctor_command)
 app.command("serve")(serve_command)
 app.command("schedule")(schedule_command)
 app.command("history")(history_command)
