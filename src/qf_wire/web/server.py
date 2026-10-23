@@ -300,11 +300,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
             store.close()
 
     def _api_history(self, query: dict[str, str]) -> None:
+        # 先校验参数再看库：非法 date 应直接 400，而不是随数据库状态变成 404 或断开连接
+        requested = (query.get("date") or "").strip()
+        if requested:
+            try:
+                date.fromisoformat(requested)
+            except ValueError:
+                self._send_json({"error": "date 格式应为 YYYY-MM-DD"}, HTTPStatus.BAD_REQUEST)
+                return
         store = self._open_store()
         if store is None:
             return
         try:
-            day = query.get("date") or store.latest_day()
+            day = requested or store.latest_day()
             if not day:
                 self._send_json({"error": "暂无数据"}, HTTPStatus.NOT_FOUND)
                 return

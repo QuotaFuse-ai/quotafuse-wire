@@ -11,12 +11,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from qf_wire.config.loader import PACKAGE_PROMPTS_DIR
 from qf_wire.core.errors import ConfigError
 
 MIGRATED_MARKER = ".migrated"
@@ -252,6 +254,22 @@ def _legacy_candidates(legacy_dir: Path) -> tuple[Path | None, Path | None]:
     return (sources if sources.is_file() else None, llm if llm.is_file() else None)
 
 
+def _copy_default_prompts(dest_dir: Path, dry_run: bool, report: MigrationReport) -> None:
+    """迁移生成的 digest.yaml 引用 prompts/*.md，旧仓库往往没有该目录。"""
+    if not PACKAGE_PROMPTS_DIR.is_dir():
+        return
+    missing = [path for path in sorted(PACKAGE_PROMPTS_DIR.glob("*.md")) if not (dest_dir / path.name).exists()]
+    if not missing:
+        return
+    if dry_run:
+        report.lines.append(f"[dry-run] 将复制 {len(missing)} 个默认提示词到 {dest_dir}")
+        return
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    for path in missing:
+        shutil.copyfile(path, dest_dir / path.name)
+    report.lines.append(f"复制默认提示词 {len(missing)} 个到 {dest_dir}")
+
+
 def migrate_legacy(
     legacy_dir: str | Path,
     config_dir: str | Path | None = None,
@@ -336,6 +354,7 @@ def migrate_legacy(
             _write_yaml(target, {"digest": {"version": 1, **digest_data}})
             report.written.append(str(target))
             report.lines.append(f"写入 {target.name}")
+        _copy_default_prompts(config.parent / "prompts", dry_run, report)
 
     if dry_run:
         report.lines.append("[dry-run] 未修改任何文件")

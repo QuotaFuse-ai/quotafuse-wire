@@ -67,11 +67,13 @@ def _root(
     setup_logging(log_level)
     ctx.obj = AppContext(output=fmt, config_dir=config_dir, data_dir=data_dir, user=user)
 
-    paths = resolve_paths(config_dir, data_dir, user)
-    report = auto_migrate([Path.cwd(), paths.data_dir.parent], paths.config_dir)
-    if report is not None:
-        for line in report.lines:
-            click.echo(f"[qfw] {line}", err=True)
+    # config 子命令自带迁移入口：干净目录下 `qfw config migrate` 不能先被自动迁移拦住
+    if ctx.invoked_subcommand != "config":
+        paths = resolve_paths(config_dir, data_dir, user)
+        report = auto_migrate([Path.cwd(), paths.data_dir.parent], paths.config_dir)
+        if report is not None:
+            for line in report.lines:
+                click.echo(f"[qfw] {line}", err=True)
 
     if ctx.invoked_subcommand is None:
         click.echo(ctx.get_help())

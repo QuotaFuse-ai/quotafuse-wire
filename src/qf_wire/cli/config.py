@@ -6,6 +6,7 @@ from pathlib import Path
 import typer
 
 from qf_wire.cli.context import AppContext, emit_json, emit_lines, emit_mapping, emit_rows
+from qf_wire.config.loader import resolve_paths
 from qf_wire.config.migrate import migrate_legacy
 from qf_wire.config.validator import validate_config_dir
 from qf_wire.core.errors import EXIT_CONFIG, EXIT_OK, ConfigError
@@ -55,7 +56,9 @@ def migrate_config(
     source = legacy_dir or Path.cwd()
     if not source.is_dir():
         raise ConfigError(f"旧仓库目录不存在: {source}")
-    report = migrate_legacy(source, app_ctx.config().paths.config_dir, dry_run=dry_run)
+    # 迁移的目标目录可能还不存在，不能走 app_ctx.config()（会要求 topics.yaml 已就绪）
+    paths = resolve_paths(app_ctx.config_dir, app_ctx.data_dir, user=app_ctx.user)
+    report = migrate_legacy(source, paths.config_dir, dry_run=dry_run)
 
     if app_ctx.output == "json":
         emit_json(report.as_dict())

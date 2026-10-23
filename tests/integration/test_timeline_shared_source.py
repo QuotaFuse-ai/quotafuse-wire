@@ -66,10 +66,6 @@ def feed_server():
         thread.join(timeout=5)
 
 
-@pytest.mark.xfail(
-    reason="QUOT-43 P1：共用信源时后一赛道覆盖 event_id，前一赛道时间线为空",
-    strict=False,
-)
 def test_shared_source_keeps_timeline_for_every_topic(feed_server, tmp_path) -> None:
     sources = [
         {
