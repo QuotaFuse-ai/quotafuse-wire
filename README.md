@@ -139,7 +139,12 @@ qfw digest --date 2026-10-22     # 对指定日期数据重新提炼
 
 # 看板
 qfw serve --port 8790            # 启动本地看板
+qfw serve --user alice           # 多用户：只服务 alice（需 QF_WIRE_MULTIUSER=true）
 qfw serve --with-scheduler       # 看板 + 定时任务同进程
+
+# 多用户凭据（一个实例服务多个用户时）
+qfw token --user alice           # 生成/查看 alice 的 API 凭据
+qfw token --user alice --rotate  # 轮换，旧凭据立即失效
 
 # 定时调度
 qfw schedule --dry-run           # 查看 schedule.yaml 的任务表

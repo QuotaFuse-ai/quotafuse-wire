@@ -1,8 +1,10 @@
-"""只读 API 鉴权：回环、内网、token 三种路径。"""
+"""只读 API 鉴权：回环、内网、token、用户身份四条路径。"""
 from __future__ import annotations
 
 import email.message
 import http
+import types
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -17,12 +19,22 @@ def clean_env(monkeypatch: pytest.MonkeyPatch, isolated_env) -> pytest.MonkeyPat
         "QF_WIRE_API_REQUIRE_TOKEN",
         "QF_WIRE_ALLOW_PRIVATE_NETWORK",
         "QF_WIRE_CORS_ORIGINS",
+        "QF_WIRE_MULTIUSER",
+        "QF_WIRE_WRITE_TOKEN",
     ):
         monkeypatch.delenv(name, raising=False)
     return monkeypatch
 
 
-def _guard(path: str, client: str, headers: dict[str, str] | None = None) -> tuple[bool, dict[str, Any]]:
+def _handler(
+    path: str,
+    client: str,
+    headers: dict[str, str] | None = None,
+    *,
+    user: str = "",
+    base_data: Path | None = None,
+    write_token: str = "write-token",
+) -> tuple[web_server.DashboardHandler, dict[str, Any]]:
     handler = object.__new__(web_server.DashboardHandler)
     handler.path = path
     message = email.message.Message()
@@ -30,6 +42,13 @@ def _guard(path: str, client: str, headers: dict[str, str] | None = None) -> tup
         message[key] = value
     handler.headers = message
     handler.client_address = (client, 50000)
+    handler.config = types.SimpleNamespace(  # type: ignore[assignment]
+        paths=types.SimpleNamespace(user=user, base_data_dir=base_data, data_dir=base_data)
+    )
+    handler.write_token = write_token
+    handler.server = types.SimpleNamespace(  # type: ignore[assignment]
+        bind_host="127.0.0.1", server_address=("127.0.0.1", 8790)
+    )
     sent: dict[str, Any] = {}
 
     def fake_send(payload: Any, status: http.HTTPStatus = http.HTTPStatus.OK) -> None:
@@ -37,6 +56,11 @@ def _guard(path: str, client: str, headers: dict[str, str] | None = None) -> tup
         sent["status"] = status
 
     handler._send_json = fake_send  # type: ignore[method-assign]
+    return handler, sent
+
+
+def _guard(path: str, client: str, headers: dict[str, str] | None = None) -> tuple[bool, dict[str, Any]]:
+    handler, sent = _handler(path, client, headers)
     return handler._guard_read(), sent
 
 
@@ -131,3 +155,73 @@ def test_error_redaction_hides_paths_and_secrets(clean_env) -> None:
     assert "C:\\Users" not in text
     assert "s3cret-token-value" not in text
     assert text.count("<path>") == 2
+
+
+def test_bound_instance_rejects_other_user(clean_env) -> None:
+    handler, sent = _handler("/api/settings", "127.0.0.1", {"X-QF-User": "bob"}, user="alice")
+
+    assert handler._guard_read() is False
+    assert sent["status"] == http.HTTPStatus.FORBIDDEN
+    assert "alice" in sent["payload"]["error"]
+
+
+def test_bound_instance_accepts_own_user(clean_env) -> None:
+    handler, _ = _handler("/api/settings", "127.0.0.1", {"X-QF-User": "alice"}, user="alice")
+
+    assert handler._guard_read() is True
+
+
+def test_shared_instance_requires_target_user_token(clean_env, tmp_path: Path) -> None:
+    clean_env.setenv("QF_WIRE_MULTIUSER", "true")
+    token_dir = tmp_path / "users" / "bob"
+    token_dir.mkdir(parents=True)
+    (token_dir / "api.token").write_text("bob-token\n", encoding="utf-8")
+
+    handler, sent = _handler("/api/settings", "127.0.0.1", {"X-QF-User": "bob"}, base_data=tmp_path)
+    assert handler._guard_read() is False
+    assert sent["status"] == http.HTTPStatus.UNAUTHORIZED
+
+    handler, _ = _handler(
+        "/api/settings",
+        "127.0.0.1",
+        {"X-QF-User": "bob", "X-QF-User-Token": "bob-token"},
+        base_data=tmp_path,
+    )
+    assert handler._guard_read() is True
+
+
+def test_write_requires_page_token(clean_env) -> None:
+    handler, sent = _handler("/api/settings", "127.0.0.1", {"X-Wire-Request": "1"})
+
+    assert handler._guard_write() is False
+    assert sent["status"] == http.HTTPStatus.FORBIDDEN
+
+
+def test_write_accepts_page_token(clean_env) -> None:
+    handler, _ = _handler(
+        "/api/settings", "127.0.0.1", {"X-Wire-Request": "1", "X-QF-Write-Token": "write-token"}
+    )
+
+    assert handler._guard_write() is True
+
+
+def test_write_token_from_env_overrides_page_token(clean_env) -> None:
+    clean_env.setenv("QF_WIRE_WRITE_TOKEN", "env-token")
+    handler, _ = _handler(
+        "/api/settings", "127.0.0.1", {"X-Wire-Request": "1", "X-QF-Write-Token": "env-token"}
+    )
+
+    assert handler._guard_write() is True
+
+
+def test_host_guard_rejects_foreign_host(clean_env) -> None:
+    handler, sent = _handler("/api/health", "127.0.0.1", {"Host": "evil.example"})
+
+    assert handler._guard_host() is False
+    assert sent["status"] == http.HTTPStatus.FORBIDDEN
+
+
+def test_host_guard_allows_listening_address(clean_env) -> None:
+    handler, _ = _handler("/api/health", "127.0.0.1", {"Host": "localhost:8790"})
+
+    assert handler._guard_host() is True

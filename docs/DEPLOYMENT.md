@@ -86,10 +86,10 @@ rm -rf ./data                # 彻底删除数据库、归档与日志，不可�
 | `GET /api/event?id=<event_id>` | 单条事件与时间线 |
 | `GET /api/settings` | 页面可编辑的模型配置（密钥脱敏） |
 | `GET /api/digest/job` | 提炼任务进度快照 |
-| `POST /api/settings` | 保存模型配置（仅本机 + `X-Wire-Request: 1`） |
-| `POST /api/digest/run` | 触发一次提炼（仅本机 + `X-Wire-Request: 1`） |
+| `POST /api/settings` | 保存模型配置（仅本机 + `X-Wire-Request: 1` + 写令牌） |
+| `POST /api/digest/run` | 触发一次提炼（仅本机 + `X-Wire-Request: 1` + 写令牌） |
 
-读接口默认只接受本机请求（校验 socket 对端地址，不信任 `X-Forwarded-For`）；写接口一律要求回环地址并带 `X-Wire-Request: 1`，不提供跨域写入。
+读接口默认只接受本机请求（校验 socket 对端地址，不信任 `X-Forwarded-For`）；写接口一律要求回环地址、`X-Wire-Request: 1` 和页面下发的一次性写令牌，不提供跨域写入。
 
 `/api/status` 返回示例：
 
@@ -111,6 +111,8 @@ rm -rf ./data                # 彻底删除数据库、归档与日志，不可�
 - 设置 `QF_WIRE_API_TOKEN` 后，非回环请求必须带 `Authorization: Bearer <token>`；回环请求可免鉴权（本地开发便利）。
 - `QF_WIRE_API_REQUIRE_TOKEN=1` 时全部接口（包括 `/api/health` 和 `/data.js`）都必须带 Bearer；若此时没有配置 token，所有请求一律 401。Docker 健康检查会自动带上 token。
 - 需要把只读 API 开放给内网其他机器时，除了设置 token，还要显式打开 `QF_WIRE_ALLOW_PRIVATE_NETWORK=1`；不设置时私网地址同样被拒绝。
+- 写令牌在 `qfw serve` 启动时随机生成（32 字节），打开 `http://127.0.0.1:8790/` 时由服务端注入页面，页面里的请求自动带上 `X-QF-Write-Token`。需要固定值（例如脚本调用）时设置 `QF_WIRE_WRITE_TOKEN`，环境变量优先。该令牌只防“别的网页/本机其它程序误触发”，不是远程访问凭据。
+- `Host` 头必须与监听地址一致（`127.0.0.1:<port>`、`localhost:<port>` 等），不一致直接 403，用于挡住 DNS rebinding。监听 `0.0.0.0` 时不做该限制。
 - 跨域默认关闭，浏览器直连后端时才配置 `QF_WIRE_CORS_ORIGINS`（逗号分隔的完整 Origin）。
 - 采集与提炼不会由只读接口隐式触发：`/api/digest/run` 只在本机页面点击时生效。
 - 错误响应只返回原因：绝对路径替换为 `<path>`，已配置的 token/API Key 替换为 `***`；未预期异常统一返回 `{"error": "服务器内部错误"}`，不返回堆栈。
@@ -129,12 +131,20 @@ rm -rf ./data                # 彻底删除数据库、归档与日志，不可�
 └── data.js
 ```
 
-- 通过请求头 `X-QF-User`（API）或 `--user <id>` / `QF_WIRE_USER`（CLI）选择上下文；缺失且多用户开启时报错，不猜测默认用户。
+- 通过请求头 `X-QF-User`（API）或 `--user <id>` / `QF_WIRE_USER`（CLI）选择上下文；多用户模式下缺失时报错，不猜测默认用户。
+- 最省事的用法是**实例绑定用户**：`QF_WIRE_MULTIUSER=true qfw serve --user alice`。该看板只服务 alice，浏览器不需要额外请求头；任何 `X-QF-User` 指向其他用户都被 403 拒绝。
+- 一个实例服务多个用户时（不带 `--user` 启动），`X-QF-User` 只负责**选择**用户，不能单独作为身份。请求必须同时带 `X-QF-User-Token`，其值等于该用户目录下的 `api.token`。用 `qfw token --user <id>` 生成（`--rotate` 轮换，旧值立即失效）：
+
+  ```bash
+  qfw token --user alice            # 首次生成并打印
+  curl -H "X-QF-User: alice" -H "X-QF-User-Token: <token>" http://127.0.0.1:8790/data.js
+  ```
+
 - 用户 id 只允许 `[a-zA-Z0-9_-]{1,64}`，`../`、斜杠、空格、超长 id 全部拒绝；HTTP 层在解析 `X-QF-User` 前就做同样校验。
-- 每个用户的数据目录独立：`wire.db`、`archive/`、`data.js`、`.env.local` 都不共享，跨用户读取事件会返回 404。
+- 每个用户的数据目录独立：`wire.db`、`archive/`、`data.js`、`api.token`、`.env.local` 都不共享，跨用户读取事件会返回 404。
 - 用户目录下的 `config/` 只有 `topics.yaml`、`sources.yaml`、`digest.yaml`、`schedule.yaml` 四个文件齐全时才生效，否则回落到全局配置。
 - 配置损坏时多用户模式不会退回别人的配置，而是直接报错让调用方重新选择用户。
-- 不引入云端账户体系：身份来自宿主环境（系统用户名、反向代理注入的可信头），Wire 自己不做登录。
+- 不引入云端账户体系：`api.token` 是本地凭据文件，不是登录账号；直接暴露到公网前，仍应由反向代理完成鉴权与 TLS。
 
 ## 定时调度
 
