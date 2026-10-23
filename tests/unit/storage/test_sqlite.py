@@ -5,7 +5,7 @@ from datetime import date, datetime, timezone
 
 from qf_wire.core.models import DigestItem, Event, KeyPoint, SourceItem, TopicDigest
 from qf_wire.sources.base import FetchResult
-from qf_wire.storage.sqlite import WireStore, split_sql
+from qf_wire.storage.sqlite import MIGRATIONS_DIR, WireStore, split_sql
 
 DAY1 = date(2026, 10, 21)
 DAY2 = date(2026, 10, 22)
@@ -161,6 +161,117 @@ def test_record_run_and_query_history(tmp_path) -> None:
         assert history[1]["item_delta"] == 1
         assert history[1]["source_unavailable"] == 1
         assert history[1]["digests"] == 1
+    finally:
+        store.close()
+
+
+def _event(items: list[SourceItem]) -> Event:
+    return Event(
+        event_id="evt-stable",
+        topic="semi",
+        title="Clustered event",
+        items=items,
+        sources=["feed_a"],
+        source_count=1,
+        confidence="medium",
+        first_seen=NOW,
+        last_seen=NOW,
+    )
+
+
+def test_cross_day_recollection_keeps_previous_day_events(tmp_path) -> None:
+    store = WireStore(tmp_path / "wire.db")
+    day1_items = [_item("https://example.com/1", "Chip maker reports record quarter", event_id="evt-stable")]
+    day2_items = [
+        _item("https://example.com/1", "Chip maker reports record quarter", event_id="evt-stable"),
+        _item("https://example.com/2", "Follow-up coverage", event_id="evt-stable"),
+    ]
+    try:
+        for run_id, day, items in (
+            ("run-1", DAY1, day1_items),
+            ("run-2", DAY2, day2_items),
+            ("run-3", DAY2, day2_items),
+        ):
+            store.record_run(
+                run_id=run_id,
+                day=day,
+                topic="semi",
+                mode="sources",
+                status="ok",
+                exit_code=0,
+                started_at=NOW,
+                finished_at=NOW,
+                results=[_result("feed_a", "ok", items)],
+                items_by_topic={"semi": items},
+                events_by_topic={"semi": [_event(items)]},
+            )
+
+        with store.engine.connect() as conn:
+            rows = conn.exec_driver_sql(
+                "SELECT day FROM events WHERE event_id = 'evt-stable' ORDER BY day"
+            ).all()
+        assert [row[0] for row in rows] == [DAY1.isoformat(), DAY2.isoformat()]
+
+        assert len(store.events_for_topic(topic="semi", day=DAY1)) == 1
+        assert len(store.events_for_topic(topic="semi", day=DAY2)) == 1
+        assert len(store.events_for_topic(topic="semi")) == 1  # 未指定日期时按 event_id 去重
+
+        day1_event = store.get_event("evt-stable", DAY1)
+        assert day1_event is not None
+        assert len(day1_event.items) == 1
+        assert [item.url for item in store.event_timeline("evt-stable", DAY1)] == [
+            "https://example.com/1"
+        ]
+        assert len(store.event_timeline("evt-stable", DAY2)) == 2
+        assert len(store.event_timeline("evt-stable")) == 2  # 默认取最近一天
+
+        history = store.history(topic="semi", days=2, end_day=DAY2)
+        assert [row["events"] for row in history] == [1, 1]
+        assert [row["event_delta"] for row in history] == [1, 0]
+
+        for item in store.items_for_day(DAY1)["semi"]:
+            assert store.get_event(item.event_id, DAY1) is not None
+            assert any(
+                entry.url == item.url
+                for entry in store.event_timeline(item.event_id, DAY1)
+            )
+    finally:
+        store.close()
+
+
+def test_migration_0004_preserves_existing_events(tmp_path) -> None:
+    store = WireStore(tmp_path / "wire.db")
+    try:
+        with store.engine.begin() as conn:
+            conn.exec_driver_sql(
+                "CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)"
+            )
+            for version in ("0001_init", "0002_source_scores", "0003_items_topic_url"):
+                script = (MIGRATIONS_DIR / f"{version}.sql").read_text(encoding="utf-8")
+                for statement in split_sql(script):
+                    conn.exec_driver_sql(statement)
+                conn.exec_driver_sql(
+                    "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+                    (version, "2026-10-22T00:00:00+00:00"),
+                )
+            conn.exec_driver_sql(
+                "INSERT INTO events (event_id, topic, day, title, sources, source_count, "
+                "confidence, first_seen, last_seen, updated_at) VALUES "
+                "('evt-old', 'semi', '2026-10-21', 'Old event', '[\"feed_a\"]', 1, 'medium', "
+                "'2026-10-21T00:00:00+00:00', '2026-10-21T00:00:00+00:00', "
+                "'2026-10-21T00:00:00+00:00')"
+            )
+
+        store.initialize()
+
+        assert store.get_event("evt-old") is not None
+        assert store.get_event("evt-old", DAY1) is not None
+        with store.engine.connect() as conn:
+            columns = {row[1]: row[5] for row in conn.exec_driver_sql("PRAGMA table_info(events)")}
+            indexes = {row[1] for row in conn.exec_driver_sql("PRAGMA index_list(events)")}
+        assert columns["event_id"] == 1
+        assert columns["day"] == 2
+        assert "idx_events_topic_day" in indexes
     finally:
         store.close()
 
