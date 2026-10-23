@@ -30,7 +30,6 @@ def test_version_is_set():
     assert __version__
 
 
-@pytest.mark.xfail(reason="QUOT-43 P0：wheel 未包含 storage/migrations/*.sql", strict=False)
 def test_package_data_includes_sql_migrations() -> None:
     patterns = _package_data_patterns()
     migrations = sorted((REPO_ROOT / "src" / "qf_wire" / "storage" / "migrations").glob("*.sql"))
@@ -41,7 +40,6 @@ def test_package_data_includes_sql_migrations() -> None:
         assert any(fnmatch.fnmatch(relative, pattern) for pattern in patterns), relative
 
 
-@pytest.mark.xfail(reason="QUOT-43 P0：prompts/*.md 未随包分发", strict=False)
 def test_prompts_live_inside_package() -> None:
     prompts = sorted((REPO_ROOT / "prompts").glob("*.md"))
     packaged = PACKAGE_ROOT / "prompts"
@@ -51,7 +49,6 @@ def test_prompts_live_inside_package() -> None:
     assert sorted(packaged.glob("*.md"))
 
 
-@pytest.mark.xfail(reason="QUOT-43 P0：config/schema 位于包外，wheel 不包含", strict=False)
 def test_schema_lives_inside_package() -> None:
     resolved = SCHEMA_DIR.resolve()
     assert PACKAGE_ROOT in resolved.parents

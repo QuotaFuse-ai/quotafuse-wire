@@ -133,10 +133,14 @@ def run(config: WireConfig, options: RunOptions) -> RunResult:
     items_by_topic: dict[str, list[SourceItem]] = {}
     events_by_topic: dict[str, list[Event]] = {}
     for topic in selected_topics:
-        topic_results = [result for result in results if result.source_id in topic.sources]
-        for result in topic_results:
-            for item in result.items:
-                item.topic = topic.id
+        # 共用信源会被多个赛道引用，逐赛道复制条目，避免后一赛道覆盖前一赛道的 topic/event_id
+        topic_results = [
+            result.model_copy(
+                update={"items": [item.model_copy(update={"topic": topic.id}) for item in result.items]}
+            )
+            for result in results
+            if result.source_id in topic.sources
+        ]
         processed = process_items(topic_results)
         items = sort_items(processed.items)
         items_by_topic[topic.id] = items

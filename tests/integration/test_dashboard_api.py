@@ -312,10 +312,6 @@ def test_multiuser_requires_user_header(dashboard, monkeypatch: pytest.MonkeyPat
     assert "QF_WIRE_USER" in body["error"]
 
 
-@pytest.mark.xfail(
-    reason="QUOT-43 P2：/api/history 对非法 date 未捕获 ValueError，连接被直接断开",
-    strict=False,
-)
 def test_history_invalid_date_returns_400(dashboard) -> None:
     base, _, _ = dashboard
 

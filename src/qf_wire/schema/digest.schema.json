@@ -1,0 +1,49 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/QuotaFuse-ai/quotafuse-wire/main/config/schema/digest.schema.json",
+  "title": "QuotaFuse Wire digest config",
+  "type": "object",
+  "required": ["digest"],
+  "additionalProperties": false,
+  "properties": {
+    "digest": {
+      "type": "object",
+      "required": ["default_model", "topics"],
+      "additionalProperties": false,
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "provider": { "type": "string", "enum": ["claude-cli", "api", "gateway"] },
+        "default_model": { "type": "string", "minLength": 1 },
+        "api_base": { "type": "string", "pattern": "^https?://" },
+        "api_key_env": { "type": "string", "minLength": 1 },
+        "language": { "type": "string", "minLength": 1 },
+        "max_items_per_topic": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "timeout_sec": { "type": "integer", "minimum": 1, "maximum": 900 },
+        "retries": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "output_schema": { "type": "string", "minLength": 1 },
+        "gateway": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "base_url": { "type": "string", "minLength": 1 },
+            "api_key_env": { "type": "string", "minLength": 1 }
+          }
+        },
+        "topics": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "type": "object",
+            "required": ["prompt_file", "output_schema"],
+            "additionalProperties": false,
+            "properties": {
+              "prompt_file": { "type": "string", "minLength": 1 },
+              "output_schema": { "type": "string", "minLength": 1 },
+              "model": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

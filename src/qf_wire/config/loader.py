@@ -27,6 +27,8 @@ CONFIG_FILES = {
     "schedule": "schedule.yaml",
 }
 
+PACKAGE_PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
+
 
 USER_ENV = "QF_WIRE_USER"
 MULTIUSER_ENV = "QF_WIRE_MULTIUSER"
@@ -154,9 +156,13 @@ class WireConfig:
         candidate = Path(relative)
         if candidate.is_absolute():
             return candidate
-        direct = self.paths.root / candidate
-        if direct.exists():
-            return direct
+        for option in (
+            self.paths.root / candidate,
+            self.paths.prompts_dir / candidate.name,
+            PACKAGE_PROMPTS_DIR / candidate.name,
+        ):
+            if option.exists():
+                return option
         return self.paths.prompts_dir / candidate.name
 
     def read_prompt(self, topic_id: str) -> str:
