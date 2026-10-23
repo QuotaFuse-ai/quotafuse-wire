@@ -56,8 +56,8 @@
 | # | 要求 | 落地位置 | 验收 |
 |---|---|---|---|
 | R5.1 | Docker Compose 一键部署 | `docker-compose.yml`、`Dockerfile`、`docs/DEPLOYMENT.md` | 干净机器 `docker compose up -d` 后 `/api/health` 返回 ok；`./data` 持久化 |
-| R5.2 | 只读 API，默认仅本机 | `web/server.py`（`_guard_read` / `_guard_write` / `_cors_headers`） | 非回环 IP 访问被拒；`QF_WIRE_API_TOKEN` + Bearer 后可访问；`tests/unit/test_web_guard.py`、`tests/integration/test_dashboard_api.py` |
-| R5.3 | 多用户配置隔离 | `config/loader.py`（`resolve_user` / `resolve_paths`）、`web/server.py`（`X-QF-User`） | 两个 user 目录互不可见；`../`、斜杠、超长 id 被拒（400）；`tests/unit/config/test_multiuser.py` |
+| R5.2 | 只读 API，默认仅本机 | `web/server.py`（`_guard_host` / `_guard_read` / `_guard_write` / `_guard_write_token`） | 非回环 IP 访问被拒；`QF_WIRE_API_TOKEN` + Bearer 后可访问；写接口除 `X-Wire-Request` 外还要求页面写令牌；`Host` 头不匹配 403；`tests/unit/test_web_guard.py`、`tests/integration/test_dashboard_api.py` |
+| R5.3 | 多用户配置隔离 | `config/loader.py`（`resolve_user` / `resolve_paths`）、`config/usertoken.py`、`web/server.py`（`_authorize_user`） | 两个 user 目录互不可见；`X-QF-User` 只选择用户，绑定用户实例拒绝切换到他人，共享实例需 `X-QF-User-Token`；`../`、斜杠、超长 id 被拒（400）；`qfw token` 生成/轮换凭据；`tests/unit/config/test_multiuser.py`、`tests/unit/cli/test_token.py` |
 | R5.4 | 定时调度（APScheduler 或 cron 模板） | `core/jobs.py`、`cli/schedule.py`、`web/server.py --with-scheduler` | 到点自动 `run` / `digest` / `sources validate`；日志写 stderr 与 `QF_WIRE_LOG_FILE`；`tests/unit/core/test_jobs.py`、`tests/unit/cli/test_schedule.py` |
 
 ## 三、CLI 契约
@@ -71,6 +71,7 @@
 | `qfw sources list\|validate` | 列出/探测源 | 0 / 4 |
 | `qfw topics list\|add --file` | 赛道管理 | 0 / 2 / 3 |
 | `qfw history --topic --days` | 历史查询 | 0 / 2 |
+| `qfw token --user [--rotate]` | 生成/轮换多用户 API 凭据 | 0 / 2 |
 | `qfw event show\|timeline` | 事件查看 | 0 / 2 / 6（不存在） |
 | `qfw mcp stdio\|http --port` | MCP 服务 | 0 / 3 |
 | `qfw config validate\|migrate` | 配置校验/迁移 | 0 / 3 |
