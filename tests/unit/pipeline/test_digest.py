@@ -169,6 +169,26 @@ def test_api_provider_requires_real_model(config, monkeypatch: pytest.MonkeyPatc
     assert "未配置模型名" in (digest.error or "")
 
 
+def test_claude_error_output_is_decoded_from_windows_codepage(
+    config, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    message = "无法连接模型服务".encode("gbk")
+
+    def fake_run(command: list[str], **_kwargs: Any) -> subprocess.CompletedProcess[bytes]:
+        return subprocess.CompletedProcess(args=command, returncode=1, stdout=b"", stderr=message)
+
+    monkeypatch.setenv("QF_WIRE_CLAUDE_BIN", "fake-claude")
+    monkeypatch.setattr(digest_module.subprocess, "run", fake_run)
+
+    digest = digest_topic(
+        config.topic("semi"), DAY, [_item("semi", "Fab news", "https://e/1")], config
+    )
+
+    assert digest.status == "partial"
+    assert "无法连接模型服务" in (digest.error or "")
+    assert "\ufffd" not in (digest.error or "")
+
+
 def test_unknown_output_schema_is_config_error(config) -> None:
     config.digest.topics["semi"] = {
         "prompt_file": "prompts/semiconductor.md",
