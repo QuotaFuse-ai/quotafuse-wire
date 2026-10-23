@@ -100,7 +100,7 @@ def test_build_scheduler_background_mode(tmp_path) -> None:
 
 
 def test_execute_job_dispatches_and_tags_result(tmp_path, monkeypatch) -> None:
-    config = load_config(write_config(tmp_path))
+    config = load_config(write_config(tmp_path), tmp_path / "data")
     calls: list[dict] = []
 
     def fake_handler(cfg, options):
