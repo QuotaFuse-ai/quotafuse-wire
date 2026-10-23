@@ -5,13 +5,14 @@ import json
 import threading
 import urllib.error
 import urllib.request
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 from qf_wire.config.loader import load_config
 from qf_wire.core.models import Event, SourceItem
+from qf_wire.core.scheduler import today_beijing
 from qf_wire.provider.wire_provider import WireProvider
 from qf_wire.sources.base import FetchResult
 from qf_wire.storage.sqlite import WireStore
@@ -19,8 +20,8 @@ from qf_wire.web.server import create_server
 from tests.fixtures.configs import write_config
 
 NOW = datetime.now(timezone.utc)
-# 事件按本地日历日分区，data_as_of 也取自时间戳的本地日期；UTC 日期在东八区 0-8 点差一天
-DAY2 = date.today()
+# 事件按北京日历日分区，data_as_of 也取时间戳的北京日期；CI 跑在 UTC 上，必须用产品同款时钟
+DAY2 = today_beijing()
 DAY1 = DAY2 - timedelta(days=1)
 EVENT_ID = "evt-stable"
 URL_A = "https://example.com/1"
