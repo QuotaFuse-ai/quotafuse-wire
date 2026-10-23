@@ -4,6 +4,7 @@
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from functools import partial
 from typing import Any, Callable
@@ -14,7 +15,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from qf_wire.config.loader import WireConfig
-from qf_wire.core.errors import ConfigError
+from qf_wire.core.errors import ConfigError, WireError
 from qf_wire.core.scheduler import RunOptions, digest_day, run, today_beijing
 from qf_wire.logging.setup import get_logger
 from qf_wire.pipeline.fetch import fetch_many
@@ -25,6 +26,9 @@ logger = get_logger(__name__)
 DEFAULT_TIMEZONE = "Asia/Shanghai"
 COMMANDS = ("run", "digest", "sources validate")
 _MISFIRE_GRACE_SEC = 3600
+DEFAULT_RETRIES = 1
+DEFAULT_RETRY_DELAY_SEC = 5.0
+MAX_RETRIES = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,16 +166,50 @@ _HANDLERS: dict[str, Callable[[WireConfig, dict[str, Any]], dict[str, Any]]] = {
 }
 
 
+def _retry_settings(options: dict[str, Any]) -> tuple[int, float]:
+    try:
+        retries = int(options.get("retries", DEFAULT_RETRIES))
+    except (TypeError, ValueError):
+        retries = DEFAULT_RETRIES
+    try:
+        delay = float(options.get("retry_delay", DEFAULT_RETRY_DELAY_SEC))
+    except (TypeError, ValueError):
+        delay = DEFAULT_RETRY_DELAY_SEC
+    return max(0, min(MAX_RETRIES, retries)), max(0.0, delay)
+
+
 def execute_job(config: WireConfig, job: ScheduleJob) -> dict[str, Any]:
     handler = _HANDLERS[job.command]
-    logger.info("定时任务 %s 开始：%s", job.id, job.command)
-    try:
-        outcome = handler(config, job.options)
-    except Exception as exc:  # 单次失败不终止调度进程
-        logger.warning("定时任务 %s 失败: %s", job.id, exc)
-        return {"job": job.id, "command": job.command, "status": "error", "error": str(exc)}
-    logger.info("定时任务 %s 完成：%s", job.id, outcome.get("status"))
-    return {"job": job.id, "command": job.command, **outcome}
+    retries, delay = _retry_settings(job.options)
+    max_attempts = retries + 1
+    attempt = 0
+    while True:
+        attempt += 1
+        logger.info("定时任务 %s 开始（第 %d/%d 次）：%s", job.id, attempt, max_attempts, job.command)
+        try:
+            outcome = handler(config, job.options)
+        except WireError as exc:  # 配置/参数问题重试也不会好，直接回给调度器
+            logger.warning("定时任务 %s 失败（配置错误）: %s", job.id, exc)
+            return {"job": job.id, "command": job.command, "status": "error", "error": str(exc), "attempts": attempt}
+        except Exception as exc:  # 单次失败不终止调度进程，按配置重试
+            if attempt >= max_attempts:
+                logger.warning("定时任务 %s 失败，已重试 %d 次: %s", job.id, attempt - 1, exc)
+                return {
+                    "job": job.id,
+                    "command": job.command,
+                    "status": "error",
+                    "error": str(exc),
+                    "attempts": attempt,
+                }
+            logger.warning("定时任务 %s 第 %d 次失败，%.1fs 后重试: %s", job.id, attempt, delay, exc)
+            if delay:
+                time.sleep(delay)
+            continue
+        logger.info("定时任务 %s 完成：%s", job.id, outcome.get("status"))
+        result = {"job": job.id, "command": job.command, **outcome}
+        if attempt > 1:
+            result["attempts"] = attempt
+        return result
 
 
 def build_scheduler(
