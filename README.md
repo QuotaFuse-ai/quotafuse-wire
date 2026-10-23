@@ -86,7 +86,7 @@ QuotaFuse Wire 是为 A股投资者打造的全球产业链资讯看板。半导
 
 ```bash
 git clone https://github.com/QuotaFuse-ai/quotafuse-wire.git
-cd quota-fuse-wire
+cd quotafuse-wire
 python -m pip install -e .
 
 # 全量采集 + 提炼 + 输出
@@ -216,6 +216,8 @@ skills/quotafuse-wire/
 
 ## 里程碑
 
+M1–M4 均已实现；下表为各里程碑的内容与验收标准。
+
 | 里程碑 | 内容 | 验收 |
 | --- | --- | --- |
 | M1 工程健壮性 | 模块化重组；采集超时/重试/降级；SQLite 归档；配置化赛道与源；旧入口兼容 | 单源失败不拖垮全局；历史可查；旧用法可用 |
@@ -226,7 +228,7 @@ skills/quotafuse-wire/
 ## 目录结构
 
 ```text
-quota-fuse-wire/
+quotafuse-wire/
 ├── pyproject.toml
 ├── README.md
 ├── config/        # topics / sources / digest / schedule + schema
