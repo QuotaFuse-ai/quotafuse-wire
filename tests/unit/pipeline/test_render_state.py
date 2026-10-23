@@ -1,7 +1,7 @@
 """看板投影：今日要点的状态与模型名回落。"""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 
 from qf_wire.config.loader import DigestSettings
 from qf_wire.core.models import Topic, TopicDigest
@@ -40,6 +40,16 @@ def test_digest_state_ok_and_missing_for_empty_success() -> None:
     ok = TopicDigest(topic="ai", date=date(2026, 10, 23), summary="有内容")
     assert _state(ok) == "ok"
     assert _state(TopicDigest(topic="ai", date=date(2026, 10, 23))) == "missing"
+
+
+def test_digest_generated_at_is_projected() -> None:
+    moment = datetime(2026, 10, 23, 2, 14, 49, tzinfo=timezone.utc)
+    digest = TopicDigest(topic="ai", date=date(2026, 10, 23), summary="有内容", generated_at=moment)
+    payload = build_dashboard_payload([TOPIC], {"ai": []}, {"ai": digest})
+
+    industry = payload["industries"][0]
+    assert industry["digest_generated_at"] == moment.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+    assert _state(None) == "missing"
 
 
 def test_resolve_model_falls_back_to_default() -> None:
