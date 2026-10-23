@@ -19,7 +19,6 @@
 <hr>
 
 <p align="center">
-  <a href="#在-quotafuse-产品线中的位置">产品定位</a> ·
   <a href="#核心能力">核心能力</a> ·
   <a href="#快速开始">快速开始</a> ·
   <a href="#cli">CLI</a> ·
@@ -42,18 +41,6 @@ QuotaFuse Wire 是为 A股投资者打造的全球产业链资讯看板。半导
 
 **边界**：Wire 呈现的是行业动向与领先信号，并非行情数据，更不构成投资建议。Industry trends, not financial advice.
 
-## 在 QuotaFuse 产品线中的位置
-
-对使用者来说，Wire 就是上面这个本地资讯看板；对 QuotaFuse 生态来说，它承担「资讯感知层」的角色——把新闻、政策与产业链动态整理成结构化资讯，供 Council 等上层消费。这是它在产品线里的分工，不是面向用户的产品描述。
-
-```text
-QuotaFuse StockData   → 数据底座（行情、财报、公告、资金、风险事件）
-QuotaFuse Wire        → 资讯感知层（新闻、政策、产业链、多源聚合、AI 提炼）
-QuotaFuse Council     → 投研合议层（多角色分析、辩论、回测、告警、报告）
-```
-
-职责：Wire 供资讯，StockData 供数据，Council 做决策。三者通过统一的 `DataEnvelope` 与 MCP 工具解耦，不重复建设。
-
 ## 核心能力
 
 | 能力 | 说明 |
@@ -68,7 +55,7 @@ QuotaFuse Council     → 投研合议层（多角色分析、辩论、回测、
 | 事件聚合 | 标题相似度 + 实体提取聚类，同一事件多源折叠为“多源 N”，并生成事件时间线 |
 | 信源质量 | 按准确率、时效性、重复率对信源评分，权重参与要点排序与可信度标注 |
 | 本地看板 | `qfw serve` 一键启动，默认仅本机监听 |
-| 生态集成 | `WireProvider`（对齐 `DataEnvelope`）+ 4 个 MCP 工具，Council 与任意 MCP 客户端可直接消费 |
+| 生态接入 | 4 个 MCP 工具，Claude Desktop / Cursor 等任意 MCP 客户端可直接消费 |
 | 部署 | 本机 Python 直接运行，或 Docker Compose 一键部署（M4） |
 
 设计原则：**自包含、本地优先、零强制 API key**。代码分层但不引入重型中间件，采集与分析全部在本机完成，数据不出本机。
@@ -77,7 +64,7 @@ QuotaFuse Council     → 投研合议层（多角色分析、辩论、回测、
 
 ```text
 ┌─────────────────────────────────────────────────────┐
-│ 调用层：CLI(qfw) │ 本地看板 │ MCP Server │ Council  │
+│ 调用层：CLI(qfw) │ 本地看板 │ MCP Server      │
 └─────────────────────────────────────────────────────┘
                           │
 ┌─────────────────────────────────────────────────────┐
@@ -89,7 +76,7 @@ QuotaFuse Council     → 投研合议层（多角色分析、辩论、回测、
 ┌─────────────────────────────────────────────────────┐
 │ 数据层                                               │
 │ 本地 SQLite / Parquet 归档 │ data.js 兼容输出         │
-│ 可选：StockData / 本地文档 / 外部 RSS                 │
+│ 可选：本地文档 / 外部 RSS                            │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -181,7 +168,7 @@ qfw config migrate               # 迁移早期版本的配置文件
 
 ## 数据契约
 
-所有结构化产出统一为 `WireEnvelope`，与 Council 的 `DataEnvelope` 对齐：
+所有结构化产出统一为 `WireEnvelope`，附溯源字段，便于下游按统一契约消费：
 
 ```python
 class WireEnvelope(BaseModel):
@@ -233,7 +220,7 @@ skills/quotafuse-wire/
 | --- | --- | --- |
 | M1 工程健壮性 | 模块化重组；采集超时/重试/降级；SQLite 归档；配置化赛道与源；旧入口兼容 | 单源失败不拖垮全局；历史可查；旧用法可用 |
 | M2 采集与分析深度 | asyncio 并发；事件聚类与时间线；信源评分；可配置提炼策略 | 采集提速；多源聚合可见；评分展示 |
-| M3 生态集成 | WireProvider；模型网关复用；MCP 工具；与生态资讯模块对齐 | Council 可消费；MCP 可调用；源列表一致 |
+| M3 生态接入 | Provider 接口；模型网关复用；MCP 工具；结构化输出 | 任意 MCP 客户端可调用；源列表一致 |
 | M4 产品化 | Docker Compose；只读 API；多用户隔离；定时调度 | 一键部署；API 本机监听；多用户隔离 |
 
 ## 目录结构
@@ -259,7 +246,7 @@ quota-fuse-wire/
 - [配置规范](docs/CONFIG.md)
 - [信源清单与新增指南](docs/SOURCES.md)
 - [MCP 工具](docs/MCP_TOOLS.md)
-- [与 Council / StockData 集成](docs/PROVIDER_INTEGRATION.md)
+- [Provider 接口与外部集成](docs/PROVIDER_INTEGRATION.md)
 - [配置迁移指南](docs/MIGRATION.md)
 - [部署](docs/DEPLOYMENT.md)
 - [需求追踪矩阵](docs/REQUIREMENTS_TRACEABILITY.md)
@@ -267,7 +254,7 @@ quota-fuse-wire/
 ## 边界
 
 - 不输出交易信号或买卖建议；
-- 不采集、不复刻 StockData 的行情、财报、公告、资金数据；
+- 不采集行情、财报、公告、资金数据；
 - 不强制托管、不要求云端账户；
 - 默认仅本机监听，敏感配置脱敏。
 
