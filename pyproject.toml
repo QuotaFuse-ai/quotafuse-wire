@@ -45,7 +45,12 @@ Issues = "https://github.com/QuotaFuse-ai/quotafuse-wire/issues"
 where = ["src"]
 
 [tool.setuptools.package-data]
-qf_wire = ["web/static/*"]
+qf_wire = [
+    "web/static/*",
+    "storage/migrations/*.sql",
+    "schema/*.schema.json",
+    "prompts/*.md",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

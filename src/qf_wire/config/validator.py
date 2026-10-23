@@ -10,7 +10,9 @@ from jsonschema import Draft7Validator
 
 from qf_wire.config.loader import CONFIG_FILES, _read_yaml, resolve_paths
 
-SCHEMA_DIR = Path(__file__).resolve().parents[3] / "config" / "schema"
+PACKAGE_DIR = Path(__file__).resolve().parents[1]
+SCHEMA_DIR = PACKAGE_DIR / "schema"
+BUNDLED_PROMPTS_DIR = PACKAGE_DIR / "prompts"
 
 
 @dataclass(slots=True)
@@ -135,7 +137,11 @@ def _check_references(
         prompt_file = settings.get("prompt_file")
         if not prompt_file:
             continue
-        candidates = [root / prompt_file, prompts_dir / Path(prompt_file).name]
+        candidates = [
+            root / prompt_file,
+            prompts_dir / Path(prompt_file).name,
+            BUNDLED_PROMPTS_DIR / Path(prompt_file).name,
+        ]
         if not any(candidate.exists() for candidate in candidates):
             report.issues.append(
                 ValidationIssue(
