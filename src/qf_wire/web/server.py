@@ -6,7 +6,10 @@
 """
 from __future__ import annotations
 
+import ipaddress
 import json
+import os
+import secrets
 import threading
 import uuid
 from datetime import date, datetime, timezone
@@ -19,8 +22,8 @@ from urllib.parse import parse_qs, urlparse
 
 from qf_wire.config.ai import read_ai_settings, save_ai_settings
 from qf_wire.config.dotenv import LOCAL_FILENAME as LOCAL_ENV_NAME
-from qf_wire.config.loader import WireConfig, load_config
-from qf_wire.core.errors import ParamError
+from qf_wire.config.loader import WireConfig, load_config, multiuser_enabled
+from qf_wire.core.errors import ParamError, WireError
 from qf_wire.core.scheduler import digest_day, render_day, today_beijing
 from qf_wire.logging.setup import get_logger
 from qf_wire.storage.sqlite import WireStore
@@ -31,7 +34,35 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 MAX_DAYS = 365
 MAX_BODY_BYTES = 16 * 1024
 WRITE_HEADER = "X-Wire-Request"
+USER_HEADER = "X-QF-User"
 LOOPBACK = frozenset({"127.0.0.1", "::1", "::ffff:127.0.0.1", "localhost"})
+PUBLIC_PATHS = frozenset({"/api/health"})
+
+
+def _env_flag(name: str) -> bool:
+    return (os.environ.get(name) or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_loopback(host: str) -> bool:
+    if host in LOOPBACK:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _is_private(host: str) -> bool:
+    try:
+        return ipaddress.ip_address(host).is_private
+    except ValueError:
+        return False
+
+
+def _cors_origins() -> set[str]:
+    raw = os.environ.get("QF_WIRE_CORS_ORIGINS") or ""
+    return {item.strip().rstrip("/") for item in raw.split(",") if item.strip()}
+
 
 _JOB_LOCK = threading.Lock()
 _DIGEST_JOB: dict[str, Any] = {
@@ -61,10 +92,9 @@ def _job_snapshot() -> dict[str, Any]:
         return snapshot
 
 
-def _run_digest_job(job_id: str, config_dir: Path, data_dir: Path, topic_ids: list[str]) -> None:
+def _run_digest_job(job_id: str, config: WireConfig, topic_ids: list[str]) -> None:
     """后台逐个赛道提炼；进度写进 _DIGEST_JOB 供前端轮询。"""
     try:
-        config = load_config(config_dir, data_dir)
         day = today_beijing()
         store = WireStore(config.paths.db_path)
         store.initialize()
@@ -109,10 +139,19 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def __init__(self, *args: Any, config: WireConfig, **kwargs: Any) -> None:
         self.config = config
+        self._active_config: WireConfig | None = None
         super().__init__(*args, **kwargs)
 
     # ---- HTTP ----
     def do_GET(self) -> None:  # noqa: N802
+        if not self._guard_read():
+            return
+        try:
+            self._dispatch_get()
+        except WireError as exc:
+            self._send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+
+    def _dispatch_get(self) -> None:
         parsed = urlparse(self.path)
         query = {key: values[-1] for key, values in parse_qs(parsed.query).items()}
         path = parsed.path
@@ -142,15 +181,37 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
 
     def do_POST(self) -> None:  # noqa: N802
-        parsed = urlparse(self.path)
         if not self._guard_write():
             return
+        try:
+            self._dispatch_post()
+        except WireError as exc:
+            self._send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+
+    def _dispatch_post(self) -> None:
+        parsed = urlparse(self.path)
         if parsed.path == "/api/settings":
             self._api_save_settings()
         elif parsed.path == "/api/digest/run":
             self._api_run_digest()
         else:
             self._send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
+
+    def do_OPTIONS(self) -> None:  # noqa: N802
+        origin = self.headers.get("Origin") or ""
+        if not self._cors_allowed(origin):
+            self._send_json({"error": "不允许的跨域来源"}, HTTPStatus.FORBIDDEN)
+            return
+        self.send_response(HTTPStatus.NO_CONTENT)
+        self._cors_headers(origin)
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header(
+            "Access-Control-Allow-Headers",
+            f"Content-Type, {WRITE_HEADER}, {USER_HEADER}, Authorization",
+        )
+        self.send_header("Access-Control-Max-Age", "600")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def do_HEAD(self) -> None:  # noqa: N802
         self.do_GET()
@@ -173,13 +234,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         )
 
     def _serve_data_js(self) -> None:
-        path = self.config.paths.data_js
-        if not path.is_file() and self.config.paths.db_path.is_file():
-            store = WireStore(self.config.paths.db_path)
+        config = self._request_config()
+        path = config.paths.data_js
+        if not path.is_file() and config.paths.db_path.is_file():
+            store = WireStore(config.paths.db_path)
             try:
                 day = store.latest_day()
                 if day:
-                    render_day(self.config, store, date.fromisoformat(day))
+                    render_day(config, store, date.fromisoformat(day))
             except Exception as exc:  # 看板降级：仍返回空数据而不是 500
                 logger.warning("生成 data.js 失败: %s", exc)
             finally:
@@ -307,7 +369,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             store.close()
 
     def _api_settings(self) -> None:
-        self._send_json(read_ai_settings(self._reload_config()).as_dict())
+        self._send_json(read_ai_settings(self._request_config()).as_dict())
 
     def _api_save_settings(self) -> None:
         body = self._read_json()
@@ -315,7 +377,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         try:
             settings = save_ai_settings(
-                self._reload_config(),
+                self._request_config(),
                 provider=body.get("provider"),
                 api_base=body.get("apiBase"),
                 api_key=body.get("apiKey"),
@@ -333,7 +395,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         body = self._read_json()
         if body is None:
             return
-        config = self._reload_config()
+        config = self._request_config()
         settings = read_ai_settings(config)
         if not settings.configured:
             self._send_json(
@@ -369,7 +431,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         thread = threading.Thread(
             target=_run_digest_job,
-            args=(job_id, config.paths.config_dir, config.paths.data_dir, [topic.id for topic in topics]),
+            args=(job_id, config, [topic.id for topic in topics]),
             name=f"qf-wire-digest-{job_id}",
             daemon=True,
         )
@@ -378,11 +440,75 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     def _reload_config(self) -> WireConfig:
         """重新读配置，让看板里刚保存的设置（进程环境变量）立即生效。"""
+        paths = self.config.paths
         try:
-            return load_config(self.config.paths.config_dir, self.config.paths.data_dir)
+            return load_config(
+                paths.base_config_dir or paths.config_dir,
+                paths.base_data_dir or paths.data_dir,
+                user=paths.user or None,
+            )
         except Exception as exc:  # 配置文件被改坏时退回启动时配置，接口仍可用
+            if multiuser_enabled() or paths.user:
+                # 多用户模式下不能退回别人的目录，直接报错让调用方选用户
+                raise
             logger.warning("重新加载配置失败: %s", exc)
             return self.config
+
+    def _resolve_request_config(self) -> WireConfig:
+        """X-QF-User 选择用户上下文；未开启多用户时忽略该头。"""
+        header_user = (self.headers.get(USER_HEADER) or "").strip()
+        if not header_user:
+            return self._reload_config()
+        paths = self.config.paths
+        return load_config(
+            paths.base_config_dir or paths.config_dir,
+            paths.base_data_dir or paths.data_dir,
+            user=header_user,
+        )
+
+    def _request_config(self) -> WireConfig:
+        if self._active_config is None:
+            self._active_config = self._resolve_request_config()
+        return self._active_config
+
+    def _guard_read(self) -> bool:
+        """只读接口鉴权：token 未配置时仅回环/可信内网可读。"""
+        path = urlparse(self.path).path
+        if path in PUBLIC_PATHS:
+            return True
+        if not (path == "/data.js" or path.startswith("/api/")):
+            return True
+        client = (self.client_address[0] if self.client_address else "") or ""
+        token = (os.environ.get("QF_WIRE_API_TOKEN") or "").strip()
+        if token:
+            if _is_loopback(client) and not _env_flag("QF_WIRE_API_REQUIRE_TOKEN"):
+                return True
+            header = self.headers.get("Authorization") or ""
+            scheme, _, value = header.partition(" ")
+            if scheme.lower() == "bearer" and secrets.compare_digest(value.strip(), token):
+                return True
+            self._send_json(
+                {"error": "只读 API 需要 Authorization: Bearer <token>"},
+                HTTPStatus.UNAUTHORIZED,
+            )
+            return False
+        if _is_loopback(client):
+            return True
+        if _env_flag("QF_WIRE_ALLOW_PRIVATE_NETWORK") and _is_private(client):
+            return True
+        self._send_json(
+            {"error": "只读 API 默认仅本机；远程访问请设置 QF_WIRE_API_TOKEN"},
+            HTTPStatus.FORBIDDEN,
+        )
+        return False
+
+    def _cors_allowed(self, origin: str) -> bool:
+        return bool(origin) and origin.rstrip("/") in _cors_origins()
+
+    def _cors_headers(self, origin: str | None) -> None:
+        if origin and self._cors_allowed(origin):
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
 
     def _guard_write(self) -> bool:
         client = (self.client_address[0] if self.client_address else "") or ""
@@ -416,10 +542,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
     # ---- 工具 ----
     def _open_store(self) -> WireStore | None:
-        if not self.config.paths.db_path.is_file():
+        config = self._request_config()
+        if not config.paths.db_path.is_file():
             self._send_json({"error": "暂无数据库，请先运行 qfw run"}, HTTPStatus.NOT_FOUND)
             return None
-        store = WireStore(self.config.paths.db_path)
+        store = WireStore(config.paths.db_path)
         store.initialize()
         return store
 
@@ -434,7 +561,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _topic_id(self, value: str | None) -> str | None:
         if not value:
             return None
-        topic = self.config.find_topic(value)
+        topic = self._request_config().find_topic(value)
         return topic.id if topic else value
 
     def _send_file(self, path: Path, content_type: str) -> None:
@@ -456,6 +583,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
+        self._cors_headers(self.headers.get("Origin"))
         self.end_headers()
         if self.command != "HEAD" and body:
             self.wfile.write(body)

@@ -50,7 +50,9 @@ docker compose logs -f wire
 - 端口映射写成 `127.0.0.1:8790:8790` / `127.0.0.1:8791:8791`，容器内监听 `0.0.0.0` 但宿主机只暴露本机。
 - `./data` 挂载到 `/data`，`./config` 挂载到 `/app/config`，镜像里不带用户配置与数据。
 - `docker-compose.yml` 不含任何密钥；模型密钥通过 `.env` 或宿主的 `claude` CLI 提供。
-- 需要跑定时采集时，额外启用 `scheduler` profile（或交给宿主 cron 调用 `docker compose exec wire qfw run`）。
+- 容器启动命令是 `qfw serve --with-scheduler`：看板与定时任务同进程。`config/schedule.yaml` 的 `enabled` 仍为 `false` 时只提供看板，日志里会说明本次未启动调度。
+- 日志写到 `/data/logs/wire.log`（由 `QF_WIRE_LOG_FILE` 指定，5MB 轮转、保留 3 份），随 `./data` 保留。
+- 启动后验证：`curl http://127.0.0.1:8790/api/health`。模型凭证可直接在页面「AI 与生成」里填写，写入 `/data/.env.local`（容器内路径），重建容器不丢。
 
 停止与清理：
 
@@ -65,18 +67,26 @@ docker compose down -v       # 连卷一起删，数据不可恢复
 
 | 接口 | 说明 |
 |---|---|
-| `GET /api/health` | 存活探测 |
+| `GET /api/health` | 存活探测，任何来源都可访问 |
 | `GET /api/digest?topic=semiconductor&date=2026-10-22` | 赛道要点 |
-| `GET /api/events?keyword=光刻&window=7d` | 事件检索 |
-| `GET /api/events/<event_id>` | 事件时间线 |
-| `GET /api/sources?topic=...` | 信源与评分 |
-| `GET /api/status` | 最近一次运行状态与降级源 |
+| `GET /api/sources?topic=...&date=...` | 信源状态与降级提示 |
+| `GET /api/history?topic=...&days=7&date=...` | 最近 N 天的趋势 |
+| `GET /api/events?topic=...&date=...` | 当日事件 |
+| `GET /api/event?id=<event_id>` | 单条事件与时间线 |
+| `GET /api/settings` | 页面可编辑的模型配置（密钥脱敏） |
+| `GET /api/digest/job` | 提炼任务进度快照 |
+| `POST /api/settings` | 保存模型配置（仅本机 + `X-Wire-Request: 1`） |
+| `POST /api/digest/run` | 触发一次提炼（仅本机 + `X-Wire-Request: 1`） |
+
+读接口默认只接受本机请求（校验 socket 对端地址，不信任 `X-Forwarded-For`）；写接口一律要求回环地址并带 `X-Wire-Request: 1`，不提供跨域写入。
 
 鉴权：
 
-- 未设置 `QF_WIRE_API_TOKEN` 时，只允许来自回环地址的请求（校验 socket 对端地址，不信任 `X-Forwarded-For`）。
+- 未设置 `QF_WIRE_API_TOKEN` 时，只允许来自回环地址的请求；同一局域网的其他机器被拒绝。
 - 设置 `QF_WIRE_API_TOKEN` 后，非回环请求必须带 `Authorization: Bearer <token>`；回环请求可免鉴权（本地开发便利），可用 `QF_WIRE_API_REQUIRE_TOKEN=1` 强制全部鉴权。
-- 写操作接口一律不提供。API 是只读的，采集只能通过 CLI 或调度器触发。
+- 需要把只读 API 开放给内网其他机器时，除了设置 token，还要显式打开 `QF_WIRE_ALLOW_PRIVATE_NETWORK=1`；不设置时私网地址同样被拒绝。
+- 跨域默认关闭，浏览器直连后端时才配置 `QF_WIRE_CORS_ORIGINS`（逗号分隔的完整 Origin）。
+- 采集与提炼不会由只读接口隐式触发：`/api/digest/run` 只在本机页面点击时生效。
 
 ## 多用户隔离
 
@@ -90,9 +100,10 @@ docker compose down -v       # 连卷一起删，数据不可恢复
 └── data.js
 ```
 
-- 通过请求头 `X-QF-User`（API）或 `--user <id>`（CLI）选择上下文；缺失且多用户开启时报错，不猜测默认用户。
-- 用户 id 只允许 `[a-zA-Z0-9_-]{1,64}`，防止路径穿越。
-- 用户之间不共享 SQLite、不共享归档目录；`sources.yaml` 可共享只读基线，再叠加用户覆盖。
+- 通过请求头 `X-QF-User`（API）或 `--user <id>` / `QF_WIRE_USER`（CLI）选择上下文；缺失且多用户开启时报错，不猜测默认用户。
+- 用户 id 只允许 `[a-zA-Z0-9_-]{1,64}`，`../`、斜杠、空格、超长 id 全部拒绝。
+- 每个用户的数据目录独立：`wire.db`、`archive/`、`data.js` 都不共享。用户目录下的 `config/` 只有 `topics.yaml`、`sources.yaml`、`digest.yaml` 三件套齐全时才生效，否则回落到全局配置。
+- 配置损坏时多用户模式不会退回别人的配置，而是直接报错让调用方重新选择用户。
 - 不引入云端账户体系：身份来自宿主环境（系统用户名、反向代理注入的可信头），Wire 自己不做登录。
 
 ## 定时调度
@@ -111,10 +122,14 @@ jobs:
     options: { topics: all }
   - id: weekly_source_check
     cron: "0 6 * * 1"
-    command: sources_validate
+    command: sources validate
 ```
 
-`qfw serve --with-scheduler` 启动时加载；`qfw run` 自身不触发调度。
+- `command` 只接受 `run`、`digest`、`sources validate`；`cron` 是标准 5 段表达式，按 `timezone` 解释。
+- `qfw serve --with-scheduler`：看板与调度同进程，适合 Docker 与长期运行。
+- `qfw schedule`：只跑调度（阻塞进程）；`--once` 立即执行全部启用任务后退出；`--dry-run` 只打印任务表，不执行。
+- 调度日志默认写 stderr；设置 `QF_WIRE_LOG_FILE` 后同时写文件（5MB 轮转、保留 3 份）。
+- `qfw run` 自身不触发调度。
 
 **系统 cron**（推荐给 Docker 之外的场景）：
 
