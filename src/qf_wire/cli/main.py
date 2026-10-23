@@ -22,6 +22,7 @@ from qf_wire.cli.run import run_command
 from qf_wire.cli.schedule import schedule_command
 from qf_wire.cli.serve import serve_command
 from qf_wire.cli.sources import sources_app
+from qf_wire.cli.token import token_command
 from qf_wire.cli.topics import topics_app
 from qf_wire.config.dotenv import load_dotenv
 from qf_wire.config.loader import resolve_paths
@@ -85,6 +86,7 @@ app.command("digest")(digest_command)
 app.command("serve")(serve_command)
 app.command("schedule")(schedule_command)
 app.command("history")(history_command)
+app.command("token")(token_command)
 
 
 def cli(argv: list[str] | None = None) -> int:

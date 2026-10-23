@@ -32,7 +32,10 @@ ENV_KEYS = (
     "QF_WIRE_ALLOW_PRIVATE_NETWORK",
     "QF_WIRE_MULTIUSER",
     "QF_WIRE_USER",
+    "QF_WIRE_WRITE_TOKEN",
 )
+
+TEST_WRITE_TOKEN = "test-write-token"
 
 API_DIGEST = {
     "digest": {
@@ -44,9 +47,9 @@ API_DIGEST = {
 }
 
 
-def _serve(tmp_path: Path, digest: dict[str, Any] | None = None):
+def _serve(tmp_path: Path, digest: dict[str, Any] | None = None, user: str | None = None):
     config_dir = write_config(tmp_path, digest=digest)
-    config = load_config(config_dir, tmp_path / "data")
+    config = load_config(config_dir, tmp_path / "data", user=user)
     server = create_server(config, "127.0.0.1", 0)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -58,6 +61,7 @@ def dashboard(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolated_env):
     for key in ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("QF_WIRE_ENV_FILE", str(tmp_path / ".env.local"))
+    monkeypatch.setenv("QF_WIRE_WRITE_TOKEN", TEST_WRITE_TOKEN)
     server, base, config = _serve(tmp_path)
     try:
         yield base, config, tmp_path
@@ -71,7 +75,22 @@ def api_dashboard(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolated_env)
     for key in ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("QF_WIRE_ENV_FILE", str(tmp_path / ".env.local"))
+    monkeypatch.setenv("QF_WIRE_WRITE_TOKEN", TEST_WRITE_TOKEN)
     server, base, config = _serve(tmp_path, API_DIGEST)
+    try:
+        yield base, config, tmp_path
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@pytest.fixture
+def bound_dashboard(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolated_env):
+    for key in ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("QF_WIRE_ENV_FILE", str(tmp_path / ".env.local"))
+    monkeypatch.setenv("QF_WIRE_MULTIUSER", "true")
+    server, base, config = _serve(tmp_path, user="alice")
     try:
         yield base, config, tmp_path
     finally:
@@ -86,12 +105,15 @@ def _request(
     method: str = "GET",
     payload: Any = None,
     signed: bool = True,
+    write_token: bool = True,
     headers: dict[str, str] | None = None,
 ):
     body = json.dumps(payload).encode("utf-8") if payload is not None else None
     request = urllib.request.Request(base + path, data=body, method=method)
     if signed:
         request.add_header("X-Wire-Request", "1")
+        if write_token:
+            request.add_header("X-QF-Write-Token", TEST_WRITE_TOKEN)
     for key, value in (headers or {}).items():
         request.add_header(key, value)
     if body is not None:
@@ -282,14 +304,85 @@ def test_multiuser_header_selects_separate_data_dirs(dashboard, monkeypatch: pyt
     bob.mkdir(parents=True)
     (alice / "data.js").write_text('window.DATA = {"owner": "alice"};', encoding="utf-8")
     (bob / "data.js").write_text('window.DATA = {"owner": "bob"};', encoding="utf-8")
+    (alice / "api.token").write_text("alice-token\n", encoding="utf-8")
+    (bob / "api.token").write_text("bob-token\n", encoding="utf-8")
 
-    alice_status, _, alice_body = _raw_request(base, "/data.js", headers={"X-QF-User": "alice"})
-    bob_status, _, bob_body = _raw_request(base, "/data.js", headers={"X-QF-User": "bob"})
+    alice_status, _, alice_body = _raw_request(
+        base, "/data.js", headers={"X-QF-User": "alice", "X-QF-User-Token": "alice-token"}
+    )
+    bob_status, _, bob_body = _raw_request(
+        base, "/data.js", headers={"X-QF-User": "bob", "X-QF-User-Token": "bob-token"}
+    )
 
     assert alice_status == bob_status == 200
     assert b"alice" in alice_body
     assert b"bob" in bob_body
     assert b"bob" not in alice_body
+
+
+def test_multiuser_switch_requires_target_user_token(dashboard, monkeypatch: pytest.MonkeyPatch) -> None:
+    base, _, tmp_path = dashboard
+    monkeypatch.setenv("QF_WIRE_MULTIUSER", "true")
+    alice = tmp_path / "data" / "users" / "alice"
+    alice.mkdir(parents=True)
+    (alice / "api.token").write_text("alice-token\n", encoding="utf-8")
+
+    status, body = _request(base, "/api/settings", headers={"X-QF-User": "alice"})
+    assert status == 401
+    assert "X-QF-User-Token" in body["error"]
+
+    status, _ = _request(base, "/api/settings", headers={"X-QF-User": "alice", "X-QF-User-Token": "wrong"})
+    assert status == 401
+
+    status, _ = _request(
+        base, "/api/settings", headers={"X-QF-User": "alice", "X-QF-User-Token": "alice-token"}
+    )
+    assert status == 200
+
+
+def test_bound_instance_rejects_switching_user(bound_dashboard) -> None:
+    base, _, tmp_path = bound_dashboard
+    alice = tmp_path / "data" / "users" / "alice"
+    alice.mkdir(parents=True, exist_ok=True)
+    (alice / "data.js").write_text('window.DATA = {"owner": "alice"};', encoding="utf-8")
+
+    status, body = _request(base, "/data.js", headers={"X-QF-User": "bob"})
+    assert status == 403
+    assert "只服务用户 alice" in body["error"]
+
+    status, _, raw = _raw_request(base, "/data.js", headers={"X-QF-User": "alice"})
+    assert status == 200
+    assert b"alice" in raw
+
+
+def test_write_requires_page_token(dashboard) -> None:
+    base, _, _ = dashboard
+
+    status, body = _request(
+        base, "/api/settings", method="POST", payload={"provider": "claude-cli"}, write_token=False
+    )
+
+    assert status == 403
+    assert "X-QF-Write-Token" in body["error"]
+
+
+def test_page_embeds_write_token(dashboard) -> None:
+    base, _, _ = dashboard
+
+    status, _, body = _raw_request(base, "/")
+
+    assert status == 200
+    assert b"window.QF_WRITE_TOKEN" in body
+    assert TEST_WRITE_TOKEN.encode() in body
+
+
+def test_foreign_host_header_rejected(dashboard) -> None:
+    base, _, _ = dashboard
+
+    status, body = _request(base, "/api/health", headers={"Host": "evil.example"})
+
+    assert status == 403
+    assert "Host" in body["error"]
 
 
 def test_multiuser_rejects_traversal_header(dashboard, monkeypatch: pytest.MonkeyPatch) -> None:

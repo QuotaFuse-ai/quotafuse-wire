@@ -96,7 +96,7 @@ def test_build_scheduler_background_mode(tmp_path) -> None:
 
 
 def test_execute_job_dispatches_and_tags_result(tmp_path, monkeypatch) -> None:
-    config = load_config(write_config(tmp_path))
+    config = load_config(write_config(tmp_path), tmp_path / "data")
     calls: list[dict] = []
 
     def fake_handler(cfg, options):
@@ -113,7 +113,7 @@ def test_execute_job_dispatches_and_tags_result(tmp_path, monkeypatch) -> None:
 
 
 def test_execute_job_catches_handler_errors(tmp_path, monkeypatch) -> None:
-    config = load_config(write_config(tmp_path))
+    config = load_config(write_config(tmp_path), tmp_path / "data")
 
     def boom(cfg, options):
         raise RuntimeError("网络不可用")
@@ -128,7 +128,7 @@ def test_execute_job_catches_handler_errors(tmp_path, monkeypatch) -> None:
 
 
 def test_digest_job_requires_collected_items(tmp_path) -> None:
-    config = load_config(write_config(tmp_path))
+    config = load_config(write_config(tmp_path), tmp_path / "data")
     job = ScheduleJob(id="digest", cron="0 8 * * *", command="digest")
 
     result = execute_job(config, job)

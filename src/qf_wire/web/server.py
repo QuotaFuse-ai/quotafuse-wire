@@ -1,8 +1,10 @@
 """本地看板：127.0.0.1 上的静态页 + 数据 API + 本机配置/生成接口。
 
 不依赖前端构建链，直接读 data/data.js 与 SQLite。
-写接口（AI 设置、生成今日要点）只接受本机请求，且要求前端带 X-Wire-Request 头，
-避免其它网页用表单跨站触发。
+写接口（AI 设置、生成今日要点）只接受本机请求，要求 X-Wire-Request 头，
+并校验随页面下发的一次性写令牌，避免其它网页或本机其它程序误触发。
+多用户模式下 X-QF-User 只负责选择用户：实例只服务启动时绑定的用户，
+共享实例上切换用户必须同时出示目标用户的 API 凭据。
 """
 from __future__ import annotations
 
@@ -22,7 +24,8 @@ from urllib.parse import parse_qs, urlparse
 
 from qf_wire.config.ai import read_ai_settings, save_ai_settings
 from qf_wire.config.dotenv import LOCAL_FILENAME as LOCAL_ENV_NAME
-from qf_wire.config.loader import WireConfig, load_config, multiuser_enabled
+from qf_wire.config.loader import USER_ID_PATTERN, WireConfig, load_config, multiuser_enabled
+from qf_wire.config.usertoken import read_user_token
 from qf_wire.core.errors import ParamError, WireError
 from qf_wire.core.scheduler import digest_day, render_day, today_beijing
 from qf_wire.logging.setup import get_logger
@@ -34,7 +37,9 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 MAX_DAYS = 365
 MAX_BODY_BYTES = 16 * 1024
 WRITE_HEADER = "X-Wire-Request"
+WRITE_TOKEN_HEADER = "X-QF-Write-Token"
 USER_HEADER = "X-QF-User"
+USER_TOKEN_HEADER = "X-QF-User-Token"
 LOOPBACK = frozenset({"127.0.0.1", "::1", "::ffff:127.0.0.1", "localhost"})
 PUBLIC_PATHS = frozenset({"/api/health"})
 
@@ -137,14 +142,15 @@ def _json_default(value: object) -> object:
 class DashboardHandler(BaseHTTPRequestHandler):
     server_version = "QuotaFuseWire/0.1"
 
-    def __init__(self, *args: Any, config: WireConfig, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, config: WireConfig, write_token: str = "", **kwargs: Any) -> None:
         self.config = config
+        self.write_token = write_token
         self._active_config: WireConfig | None = None
         super().__init__(*args, **kwargs)
 
     # ---- HTTP ----
     def do_GET(self) -> None:  # noqa: N802
-        if not self._guard_read():
+        if not self._guard_host() or not self._guard_read():
             return
         try:
             self._dispatch_get()
@@ -181,7 +187,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
 
     def do_POST(self) -> None:  # noqa: N802
-        if not self._guard_write():
+        if not self._guard_host() or not self._guard_write():
             return
         try:
             self._dispatch_post()
@@ -198,6 +204,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
 
     def do_OPTIONS(self) -> None:  # noqa: N802
+        if not self._guard_host():
+            return
         origin = self.headers.get("Origin") or ""
         if not self._cors_allowed(origin):
             self._send_json({"error": "不允许的跨域来源"}, HTTPStatus.FORBIDDEN)
@@ -207,7 +215,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header(
             "Access-Control-Allow-Headers",
-            f"Content-Type, {WRITE_HEADER}, {USER_HEADER}, Authorization",
+            f"Content-Type, {WRITE_HEADER}, {WRITE_TOKEN_HEADER}, {USER_HEADER}, {USER_TOKEN_HEADER}, Authorization",
         )
         self.send_header("Access-Control-Max-Age", "600")
         self.send_header("Content-Length", "0")
@@ -224,7 +232,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         for name in PAGE_CANDIDATES:
             candidate = STATIC_DIR / name
             if candidate.is_file():
-                self._send_file(candidate, "text/html; charset=utf-8")
+                self._send_bytes(self._page_with_token(candidate), "text/html; charset=utf-8")
                 return
         self._send_bytes(
             "<!doctype html><meta charset=\"utf-8\"><h1>页面缺失</h1>"
@@ -232,6 +240,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
             "text/html; charset=utf-8",
             HTTPStatus.INTERNAL_SERVER_ERROR,
         )
+
+    def _page_with_token(self, path: Path) -> bytes:
+        """把本次运行的一次性写令牌注入页面；其它来源读不到页面内容（CORS）。"""
+        page = path.read_bytes()
+        if not self.write_token:
+            return page
+        script = f"<script>window.QF_WRITE_TOKEN={json.dumps(self.write_token)};</script>\n".encode("utf-8")
+        marker = b"</head>"
+        if marker in page:
+            return page.replace(marker, script + marker, 1)
+        return script + page
 
     def _serve_data_js(self) -> None:
         config = self._request_config()
@@ -463,9 +482,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return self.config
 
     def _resolve_request_config(self) -> WireConfig:
-        """X-QF-User 选择用户上下文；未开启多用户时忽略该头。"""
+        """X-QF-User 只做选择；跨用户权限已在 _authorize_user 里校验过。"""
         header_user = (self.headers.get(USER_HEADER) or "").strip()
-        if not header_user:
+        if not header_user or header_user == self.config.paths.user:
             return self._reload_config()
         paths = self.config.paths
         return load_config(
@@ -479,6 +498,64 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._active_config = self._resolve_request_config()
         return self._active_config
 
+    def _guard_host(self) -> bool:
+        """Host 头必须是本服务监听地址，挡住 DNS rebinding 读取页面。"""
+        allowed = self._allowed_hosts()
+        if allowed is None:
+            return True
+        host = (self.headers.get("Host") or "").strip().lower()
+        if not host or host in allowed:
+            return True
+        self._send_json({"error": "Host 头与监听地址不匹配"}, HTTPStatus.FORBIDDEN)
+        return False
+
+    def _allowed_hosts(self) -> frozenset[str] | None:
+        bind_host = (getattr(self.server, "bind_host", "") or "").lower()
+        if bind_host in {"", "0.0.0.0", "::"}:
+            return None
+        port = self.server.server_address[1]
+        names = {"127.0.0.1", "localhost", "[::1]", "::1", bind_host}
+        hosts = {f"{name}:{port}" for name in names}
+        if port == 80:
+            hosts |= names
+        return frozenset(hosts)
+
+    def _authorize_user(self) -> bool:
+        """X-QF-User 只选择用户：实例绑定用户之外一律拒绝，共享实例要凭据。"""
+        header_user = (self.headers.get(USER_HEADER) or "").strip()
+        if not header_user:
+            return True
+        if not USER_ID_PATTERN.fullmatch(header_user):
+            self._send_json(
+                {"error": f"用户 id 只允许字母、数字、下划线和短横线（1-64 位）: {header_user}"},
+                HTTPStatus.BAD_REQUEST,
+            )
+            return False
+        bound_user = (self.config.paths.user or "").strip()
+        if bound_user:
+            if header_user == bound_user:
+                return True
+            self._send_json(
+                {"error": f"本实例只服务用户 {bound_user}，拒绝切换到 {header_user}"},
+                HTTPStatus.FORBIDDEN,
+            )
+            return False
+        if not multiuser_enabled():
+            return True
+        presented = (self.headers.get(USER_TOKEN_HEADER) or "").strip()
+        expected = read_user_token(self._base_data_dir(), header_user)
+        if presented and expected and secrets.compare_digest(presented, expected):
+            return True
+        self._send_json(
+            {"error": "切换用户需要该用户的 API 凭据（qfw token --user <id> 生成，放在 X-QF-User-Token 头）"},
+            HTTPStatus.UNAUTHORIZED,
+        )
+        return False
+
+    def _base_data_dir(self) -> Path:
+        paths = self.config.paths
+        return paths.base_data_dir or paths.data_dir
+
     def _guard_read(self) -> bool:
         """只读接口鉴权：token 未配置时仅回环/可信内网可读。"""
         path = urlparse(self.path).path
@@ -490,20 +567,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
         token = (os.environ.get("QF_WIRE_API_TOKEN") or "").strip()
         if token:
             if _is_loopback(client) and not _env_flag("QF_WIRE_API_REQUIRE_TOKEN"):
-                return True
+                return self._authorize_user()
             header = self.headers.get("Authorization") or ""
             scheme, _, value = header.partition(" ")
             if scheme.lower() == "bearer" and secrets.compare_digest(value.strip(), token):
-                return True
+                return self._authorize_user()
             self._send_json(
                 {"error": "只读 API 需要 Authorization: Bearer <token>"},
                 HTTPStatus.UNAUTHORIZED,
             )
             return False
         if _is_loopback(client):
-            return True
+            return self._authorize_user()
         if _env_flag("QF_WIRE_ALLOW_PRIVATE_NETWORK") and _is_private(client):
-            return True
+            return self._authorize_user()
         self._send_json(
             {"error": "只读 API 默认仅本机；远程访问请设置 QF_WIRE_API_TOKEN"},
             HTTPStatus.FORBIDDEN,
@@ -526,7 +603,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if self.headers.get(WRITE_HEADER) != "1":
             self._send_json({"error": "缺少本机请求标记"}, HTTPStatus.FORBIDDEN)
             return False
+        if not self._authorize_user():
+            return False
+        if not self._guard_write_token():
+            return False
         return True
+
+    def _guard_write_token(self) -> bool:
+        expected = (os.environ.get("QF_WIRE_WRITE_TOKEN") or "").strip() or self.write_token
+        presented = (self.headers.get(WRITE_TOKEN_HEADER) or "").strip()
+        if expected and presented and secrets.compare_digest(presented, expected):
+            return True
+        self._send_json(
+            {"error": f"写接口需要 {WRITE_TOKEN_HEADER}（打开看板页面时自动带上）"},
+            HTTPStatus.FORBIDDEN,
+        )
+        return False
 
     def _read_json(self) -> dict[str, Any] | None:
         try:
@@ -572,14 +664,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
         topic = self._request_config().find_topic(value)
         return topic.id if topic else value
 
-    def _send_file(self, path: Path, content_type: str) -> None:
-        try:
-            body = path.read_bytes()
-        except OSError:
-            self._send_json({"error": "not found"}, HTTPStatus.NOT_FOUND)
-            return
-        self._send_bytes(body, content_type)
-
     def _send_json(self, payload: Any, status: HTTPStatus = HTTPStatus.OK) -> None:
         body = json.dumps(payload, ensure_ascii=False, default=_json_default).encode("utf-8")
         self._send_bytes(body, "application/json; charset=utf-8", status)
@@ -598,9 +682,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
 
 def create_server(config: WireConfig, host: str = "127.0.0.1", port: int = 8790) -> ThreadingHTTPServer:
-    handler = partial(DashboardHandler, config=config)
+    write_token = (os.environ.get("QF_WIRE_WRITE_TOKEN") or "").strip() or secrets.token_urlsafe(32)
+    handler = partial(DashboardHandler, config=config, write_token=write_token)
     server = ThreadingHTTPServer((host, port), handler)
     server.daemon_threads = True
+    server.write_token = write_token  # 供测试与脚本读取；页面里注入的是同一个值
+    server.bind_host = host
     return server
 
 
