@@ -57,6 +57,7 @@ def build_dashboard_payload(
                 ],
                 "digest_state": _digest_state(digest),
                 "digest_error": (digest.error or "") if digest else "",
+                "digest_generated_at": _stamp(digest.generated_at if digest else None),
                 "items": projected,
             }
         )
@@ -85,6 +86,14 @@ def build_dashboard_payload(
                 f"{result.source_name or result.source_id}：该源今日不可用" for result in unavailable
             ]
     return payload
+
+
+def _stamp(value: datetime | None) -> str:
+    if value is None:
+        return ""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _digest_state(digest: TopicDigest | None) -> str:

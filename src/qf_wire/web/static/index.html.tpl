@@ -215,6 +215,7 @@
   .status-line.ok { color: var(--ok); }
   .status-line.err { color: var(--danger); }
   .job-results { margin: 12px 0 0; padding-left: 18px; font-size: 12.5px; color: #c9d4f2; line-height: 1.8; }
+  .job-results .job-summary { list-style: none; color: var(--muted); margin-left: -18px; }
   .empty-state .actions { margin-top: 12px; }
   .topic-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
   .topic-actions button { font-size: 12.5px; padding: 6px 12px; }
@@ -447,7 +448,9 @@
     var panel = el("section", "panel");
     var head = el("div", "panel-head");
     head.appendChild(el("h3", null, (industry.name || industry.key || "") + " 今日要点"));
-    head.appendChild(el("span", "panel-note", state === "ok" ? "由模型提炼 · 跨源去重" : ""));
+    var panelNote = state === "ok" ? "由模型提炼 · 跨源去重" : "";
+    if (industry.digest_generated_at) panelNote += " · 更新于 " + industry.digest_generated_at;
+    head.appendChild(el("span", "panel-note", panelNote));
     var hasContent = Boolean(summary || keyPoints.length);
     if (state !== "missing" && hasContent) {
       var headActions = el("div", "digest-actions");
@@ -510,7 +513,7 @@
     if (summary) text.appendChild(el("p", "digest-summary", summary));
     if (state === "partial") {
       var reason = industry.digest_error ? "本次提炼失败：" + industry.digest_error : "本次提炼未能完整完成，以下为已采集资讯。";
-      text.appendChild(el("p", "digest-warn", reason + " 到「AI 与生成」检查模型地址与密钥后重新生成即可。"));
+      text.appendChild(el("p", "digest-warn", reason + " 到「AI 与生成」检查接入方式、模型地址与密钥后重新生成即可。"));
     }
     body.appendChild(text);
 
@@ -990,10 +993,30 @@
       results.textContent = "";
       var map = job.results || {};
       var labels = { ok: "完成", partial: "部分完成", skipped: "已跳过", failed: "失败" };
-      Object.keys(map).forEach(function (key) {
-        var entry = map[key] || {};
-        var text = topicName(key) + "：" + (labels[entry.status] || "完成");
-        if (entry.error) text += " · " + entry.error;
+      var ids = (job.topics && job.topics.length) ? job.topics : Object.keys(map);
+      if (ids.length) {
+        var summary = el("li", "job-summary");
+        if (job.state === "running") {
+          summary.textContent = "已完成 " + done + "/" + total + "，其余赛道排队中";
+        } else if (job.state === "done") {
+          summary.textContent = "本次共 " + ids.length + " 个赛道";
+        } else {
+          summary.textContent = "最近一次生成记录";
+        }
+        results.appendChild(summary);
+      }
+      ids.forEach(function (key) {
+        var entry = map[key];
+        var label;
+        if (entry) {
+          label = labels[entry.status] || entry.status || "完成";
+        } else if (job.state === "running") {
+          label = key === job.current ? "进行中" : "等待中";
+        } else {
+          label = "未执行";
+        }
+        var text = topicName(key) + "：" + label;
+        if (entry && entry.error) text += " · " + entry.error;
         results.appendChild(el("li", null, text));
       });
     }
@@ -1074,8 +1097,10 @@
       if (data.industries && data.industries.length && !findIndustry(state.topic)) {
         state.topic = data.industries[0].key;
       }
-      // 设置页有正在编辑的表单，刷新数据时只更新赛道按钮，避免清空输入
+      // 设置页有正在编辑的表单，刷新数据时只更新非表单区域，避免清空输入
       if (state.view === "settings") {
+        renderChrome();
+        renderNav();
         refreshTopicButtons();
       } else {
         render();
