@@ -254,8 +254,9 @@ class WireStore:
                             "confidence, first_seen, last_seen, updated_at) VALUES "
                             "(:event_id, :topic, :day, :title, :sources, :source_count, :confidence, "
                             ":first_seen, :last_seen, :updated_at) "
-                            "ON CONFLICT(event_id) DO UPDATE SET day=excluded.day, title=excluded.title, "
-                            "sources=excluded.sources, source_count=excluded.source_count, "
+                            "ON CONFLICT(event_id, day) DO UPDATE SET topic=excluded.topic, "
+                            "title=excluded.title, sources=excluded.sources, "
+                            "source_count=excluded.source_count, "
                             "confidence=excluded.confidence, first_seen=excluded.first_seen, "
                             "last_seen=excluded.last_seen, updated_at=excluded.updated_at"
                         ),
@@ -453,17 +454,26 @@ class WireStore:
     ) -> list[Event]:
         self.initialize()
         sql = "SELECT * FROM events WHERE 1 = 1"
-        params: dict[str, Any] = {"limit": limit}
+        params: dict[str, Any] = {}
         if topic:
             sql += " AND topic = :topic"
             params["topic"] = topic
         if day:
             sql += " AND day = :day"
             params["day"] = _day(day)
-        sql += " ORDER BY COALESCE(last_seen, updated_at) DESC LIMIT :limit"
+        sql += " ORDER BY COALESCE(last_seen, updated_at) DESC, day DESC"
         with self.engine.connect() as conn:
             rows = conn.execute(text(sql), params).mappings().all()
-            return [self._row_to_event(conn, row) for row in rows]
+            events: list[Event] = []
+            seen: set[str] = set()
+            for row in rows:
+                if row["event_id"] in seen:
+                    continue
+                seen.add(row["event_id"])
+                events.append(self._row_to_event(conn, row))
+                if len(events) >= limit:
+                    break
+            return events
 
     def search_events(
         self,
@@ -509,69 +519,66 @@ class WireStore:
             ).mappings().first()
         return dict(row) if row else None
 
-    def get_event(self, event_id: str) -> Event | None:
+    def get_event(self, event_id: str, day: date | str | None = None) -> Event | None:
         self.initialize()
         with self.engine.connect() as conn:
-            row = conn.execute(
-                text("SELECT * FROM events WHERE event_id = :event_id"),
-                {"event_id": event_id},
-            ).mappings().first()
+            row = self._event_row(conn, event_id, day)
             if not row:
                 return None
             return self._row_to_event(conn, row)
 
-    def event_timeline(self, event_id: str) -> list[SourceItem]:
+    def event_timeline(
+        self, event_id: str, day: date | str | None = None
+    ) -> list[SourceItem]:
         self.initialize()
         with self.engine.connect() as conn:
-            rows = conn.execute(
-                text(
-                    "SELECT topic, title, url, source_id, sources, summary, zh, published_at, "
-                    "event_id, confidence FROM items WHERE event_id = :event_id "
-                    "ORDER BY COALESCE(published_at, '') ASC, id ASC"
-                ),
-                {"event_id": event_id},
-            ).mappings()
-            return [
-                SourceItem(
-                    title=row["title"],
-                    url=row["url"],
-                    source_id=row["source_id"] or "",
-                    topic=row["topic"],
-                    summary=row["summary"] or "",
-                    zh=row["zh"] or "",
-                    published_at=parse_datetime(row["published_at"]),
-                    sources=json.loads(row["sources"] or "[]"),
-                    event_id=row["event_id"],
-                    confidence=row["confidence"] or "medium",
-                )
-                for row in rows
-            ]
+            row = self._event_row(conn, event_id, day)
+            if not row:
+                return []
+            return self._items_for_event(conn, event_id, row["day"], ascending=True)
 
     @staticmethod
-    def _row_to_event(conn: Any, row: Any) -> Event:
-        items = []
-        for item_row in conn.execute(
+    def _event_row(conn: Any, event_id: str, day: date | str | None = None) -> Any:
+        sql = "SELECT * FROM events WHERE event_id = :event_id"
+        params: dict[str, Any] = {"event_id": event_id}
+        if day:
+            sql += " AND day = :day"
+            params["day"] = _day(day)
+        sql += " ORDER BY day DESC LIMIT 1"
+        return conn.execute(text(sql), params).mappings().first()
+
+    @staticmethod
+    def _items_for_event(
+        conn: Any, event_id: str, day: str, *, ascending: bool
+    ) -> list[SourceItem]:
+        direction = "ASC" if ascending else "DESC"
+        rows = conn.execute(
             text(
                 "SELECT topic, title, url, source_id, sources, summary, zh, published_at, "
-                "event_id, confidence FROM items WHERE event_id = :event_id "
-                "ORDER BY COALESCE(published_at, '') DESC, id DESC"
+                "event_id, confidence FROM items WHERE event_id = :event_id AND day = :day "
+                f"ORDER BY COALESCE(published_at, '') {direction}, id {direction}"
             ),
-            {"event_id": row["event_id"]},
-        ).mappings():
-            items.append(
-                SourceItem(
-                    title=item_row["title"],
-                    url=item_row["url"],
-                    source_id=item_row["source_id"] or "",
-                    topic=item_row["topic"],
-                    summary=item_row["summary"] or "",
-                    zh=item_row["zh"] or "",
-                    published_at=parse_datetime(item_row["published_at"]),
-                    sources=json.loads(item_row["sources"] or "[]"),
-                    event_id=item_row["event_id"],
-                    confidence=item_row["confidence"] or "medium",
-                )
+            {"event_id": event_id, "day": day},
+        ).mappings()
+        return [
+            SourceItem(
+                title=row["title"],
+                url=row["url"],
+                source_id=row["source_id"] or "",
+                topic=row["topic"],
+                summary=row["summary"] or "",
+                zh=row["zh"] or "",
+                published_at=parse_datetime(row["published_at"]),
+                sources=json.loads(row["sources"] or "[]"),
+                event_id=row["event_id"],
+                confidence=row["confidence"] or "medium",
             )
+            for row in rows
+        ]
+
+    @classmethod
+    def _row_to_event(cls, conn: Any, row: Any) -> Event:
+        items = cls._items_for_event(conn, row["event_id"], row["day"], ascending=False)
         return Event(
             event_id=row["event_id"],
             topic=row["topic"],
