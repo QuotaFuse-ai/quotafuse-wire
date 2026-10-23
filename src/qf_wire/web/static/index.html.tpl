@@ -746,7 +746,7 @@
   }
 
   function apiRequest(url, method, payload) {
-    var options = { method: method || "GET", headers: { "X-Wire-Request": "1" } };
+    var options = { method: method || "GET", headers: { "X-Wire-Request": "1", "X-QF-Write-Token": window.QF_WRITE_TOKEN || "" } };
     if (payload !== undefined) {
       options.headers["Content-Type"] = "application/json";
       options.body = JSON.stringify(payload);
