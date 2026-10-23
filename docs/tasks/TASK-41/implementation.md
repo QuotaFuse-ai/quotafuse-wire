@@ -1,7 +1,6 @@
-# QUOT-41 / M3 生态集成：实现报告
+# M3 生态集成：实现报告
 
 - 日期：2026-10-23
-- 分支：`agent/QUOT-41-m3`
 - 基线：M2 合并后的 `8908ba1`
 - 关联契约：[`docs/MCP_TOOLS.md`](../../MCP_TOOLS.md)、[`docs/PROVIDER_INTEGRATION.md`](../../PROVIDER_INTEGRATION.md)
 - 决策记录：[0004 MCP Server 回环与无数据语义](../../decisions/0004-mcp-server-loopback.md)
@@ -139,7 +138,7 @@ QF_WIRE_CLAUDE_BIN=/nonexistent/claude qfw digest --topic semiconductor --no-ren
 
 ## 验收复核（项目领导人）
 
-- 合入 `agent/QUOT-39-dashboard` 后全量测试：`172 passed`（含 QUOT-39 看板用例，M3 交付时 146 条）。
+- 合入看板分支后全量测试：`172 passed`（含看板用例，M3 交付时 146 条）。
 - Skill 三件套、MCP 四工具、信封 11 字段与实现逐项核对一致。
 - `docs/REQUIREMENTS_v1.0.txt` 未改动；`src/qf_wire/core/errors.py` 仍保留 `EXIT_NOT_FOUND = 6`。
 ## 环境注意

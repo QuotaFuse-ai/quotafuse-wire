@@ -1,8 +1,8 @@
-# QUOT-43 / 全量对比测试报告
+# 全量对比测试报告
 
 - 日期：2026-10-23
-- 分支：`agent/QUOT-43-test`（基线 `5551a32`）
-- 关联 issue：QUOT-43（父 issue QUOT-39 第 5 阶段）
+- 基线：`5551a32`
+- 关联任务：测试与缺陷复核（父任务第 5 阶段）
 - 被测版本：`quota-fuse-wire` 0.1.0（`qfw` CLI / `qf_wire`）
 - 测试对象：`docs/REQUIREMENTS_TRACEABILITY.md` 全量验收矩阵 R1.1–R5.4 + 第 3 章 CLI 契约
 - 产出：本报告 + 3 个测试文件（2 个新增用例文件改动，1 个新增文件），5 条 xfail 复现用例

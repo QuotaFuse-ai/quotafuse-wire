@@ -122,6 +122,36 @@ class TopicDigest(BaseModel):
     fallback: bool = False
 
 
+MergeReason = Literal["shared_entity", "title_similarity", "simhash", "duplicate", "single"]
+
+
+class EventExplanation(BaseModel):
+    """事件归并依据：说明多条报道为什么被折叠到同一事件。"""
+
+    model_config = ConfigDict(extra="ignore")
+
+    reason: MergeReason = "single"
+    shared_entities: list[str] = Field(default_factory=list)
+    title_similarity: float = 0.0
+    simhash_similarity: float = 0.0
+    threshold: float = 0.0
+    window_hours: int = 0
+
+    def summary(self) -> str:
+        if self.reason == "single":
+            return "单篇报道"
+        if self.reason == "duplicate":
+            return "同链接或同标题转载"
+        parts: list[str] = []
+        if self.shared_entities:
+            parts.append("共同实体：" + "、".join(self.shared_entities))
+        if self.title_similarity:
+            parts.append(f"标题相似度 {self.title_similarity:.2f}")
+        if self.reason == "simhash":
+            parts.append(f"SimHash 相似度 {self.simhash_similarity:.2f}")
+        return "；".join(parts) or "多篇报道归并"
+
+
 class Event(BaseModel):
     """同一事件的多源报道聚合。M1 仅做轻量分组，M2 增强。"""
 
@@ -136,6 +166,7 @@ class Event(BaseModel):
     confidence: Confidence = "medium"
     first_seen: datetime | None = None
     last_seen: datetime | None = None
+    explanation: EventExplanation | None = None
 
 
 class WireEnvelope(BaseModel):

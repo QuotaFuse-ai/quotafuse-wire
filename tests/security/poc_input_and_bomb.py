@@ -1,4 +1,4 @@
-"""QUOT-44 PoC 3：输入校验与解压边界。
+"""安全 PoC 3：输入校验与解压边界。
 
 复现：
 1. Authorization 头含非 ASCII 字符时，secrets.compare_digest 抛 TypeError，连接被直接断开。
