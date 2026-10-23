@@ -1,6 +1,10 @@
 """定时任务：schedule.yaml 解析、调度器注册与任务分发。"""
 from __future__ import annotations
 
+import threading
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import pytest
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.schedulers.blocking import BlockingScheduler
@@ -112,19 +116,89 @@ def test_execute_job_dispatches_and_tags_result(tmp_path, monkeypatch) -> None:
     assert result == {"job": "daily", "command": "run", "status": "ok", "items": 3}
 
 
-def test_execute_job_catches_handler_errors(tmp_path, monkeypatch) -> None:
+def test_execute_job_retries_transient_errors(tmp_path, monkeypatch) -> None:
+    config = load_config(write_config(tmp_path))
+    calls: list[int] = []
+
+    def flaky(cfg, options):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("网络不可用")
+        return {"status": "ok"}
+
+    monkeypatch.setitem(jobs._HANDLERS, "run", flaky)
+    job = ScheduleJob(
+        id="daily", cron="0 7 * * *", command="run", options={"retries": 1, "retry_delay": 0}
+    )
+
+    result = execute_job(config, job)
+
+    assert result["status"] == "ok"
+    assert result["attempts"] == 2
+    assert len(calls) == 2
+
+
+def test_execute_job_gives_up_after_retries(tmp_path, monkeypatch) -> None:
     config = load_config(write_config(tmp_path))
 
     def boom(cfg, options):
         raise RuntimeError("网络不可用")
 
     monkeypatch.setitem(jobs._HANDLERS, "run", boom)
-    job = ScheduleJob(id="daily", cron="0 7 * * *", command="run")
+    job = ScheduleJob(
+        id="daily", cron="0 7 * * *", command="run", options={"retries": 2, "retry_delay": 0}
+    )
 
     result = execute_job(config, job)
 
     assert result["status"] == "error"
     assert "网络不可用" in result["error"]
+    assert result["attempts"] == 3
+
+
+def test_execute_job_does_not_retry_config_errors(tmp_path, monkeypatch) -> None:
+    config = load_config(write_config(tmp_path))
+    calls: list[int] = []
+
+    def broken(cfg, options):
+        calls.append(1)
+        raise ConfigError("配置写错了")
+
+    monkeypatch.setitem(jobs._HANDLERS, "run", broken)
+    job = ScheduleJob(
+        id="daily", cron="0 7 * * *", command="run", options={"retries": 3, "retry_delay": 0}
+    )
+
+    result = execute_job(config, job)
+
+    assert result["status"] == "error"
+    assert result["attempts"] == 1
+    assert len(calls) == 1
+
+
+def test_scheduler_triggers_registered_job(tmp_path, monkeypatch) -> None:
+    schedule = {
+        "schedule": {
+            "enabled": True,
+            "timezone": "Asia/Shanghai",
+            "jobs": [{"id": "daily", "cron": "0 7 * * *", "command": "run"}],
+        }
+    }
+    config = load_config(write_config(tmp_path, schedule=schedule))
+    fired = threading.Event()
+
+    def fake_handler(cfg, options):
+        fired.set()
+        return {"status": "ok"}
+
+    monkeypatch.setitem(jobs._HANDLERS, "run", fake_handler)
+    scheduler, _ = build_scheduler(config, background=True)
+    scheduler.get_job("daily").modify(next_run_time=datetime.now(ZoneInfo("Asia/Shanghai")))
+    scheduler.start()
+    try:
+        assert fired.wait(5), "调度器未在预期时间内触发任务"
+    finally:
+        scheduler.shutdown(wait=False)
 
 
 def test_digest_job_requires_collected_items(tmp_path) -> None:
