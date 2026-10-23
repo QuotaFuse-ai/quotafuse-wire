@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import json
+import locale
 import os
 import shutil
 import subprocess
@@ -178,6 +179,25 @@ def _call_gateway(
     return _post_chat(base, key, prompt, model, settings.timeout_sec, label="模型网关")
 
 
+def decode_output(raw: bytes | str | None) -> str:
+    """CLI 输出在 Windows 上可能不是 UTF-8，先按 UTF-8 解，失败再按系统编码。"""
+    if raw is None:
+        return ""
+    if isinstance(raw, str):
+        return raw
+    seen: set[str] = set()
+    # -X utf8 下系统编码会报 utf-8，所以中文 Windows 的 GBK 输出要单独兜底
+    for encoding in ("utf-8", locale.getpreferredencoding(False), "gbk"):
+        if not encoding or encoding.lower() in seen:
+            continue
+        seen.add(encoding.lower())
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
 def _call_claude_cli(prompt: str, settings: DigestSettings, model: str | None = None) -> str:
     binary = os.environ.get("QF_WIRE_CLAUDE_BIN") or shutil.which("claude")
     if not binary:
@@ -190,9 +210,6 @@ def _call_claude_cli(prompt: str, settings: DigestSettings, model: str | None = 
         completed = subprocess.run(
             command,
             capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
             timeout=settings.timeout_sec,
             check=False,
         )
@@ -200,10 +217,12 @@ def _call_claude_cli(prompt: str, settings: DigestSettings, model: str | None = 
         raise DigestUnavailable(f"claude CLI 超时（{settings.timeout_sec}s）") from exc
     except OSError as exc:
         raise DigestUnavailable(f"claude CLI 无法执行: {exc}") from exc
+    stdout_text = decode_output(completed.stdout).strip()
+    stderr_text = decode_output(completed.stderr).strip()
     if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout or "").strip()[:MAX_ERROR_LEN]
+        detail = (stderr_text or stdout_text)[:MAX_ERROR_LEN]
         raise DigestUnavailable(f"claude CLI 退出码 {completed.returncode}: {detail}")
-    output = (completed.stdout or "").strip()
+    output = stdout_text
     if not output:
         raise DigestUnavailable("claude CLI 返回空输出")
     return output
