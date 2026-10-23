@@ -1,4 +1,4 @@
-"""QUOT-44 PoC 2：写接口 → 修改 apiBase → 泄漏已保存的 API Key。
+"""安全 PoC 2：写接口 → 修改 apiBase → 泄漏已保存的 API Key。
 
 背景：POST /api/settings 可以修改接口地址；随后 POST /api/digest/run 会让
 后台任务把 Authorization: Bearer <已保存密钥> 发往这个地址。

@@ -17,6 +17,7 @@ import yaml
 from pydantic import ValidationError
 
 from qf_wire.config.dotenv import first_env
+from qf_wire.core.cluster import ClusterSettings
 from qf_wire.core.errors import ConfigError, ParamError
 from qf_wire.core.models import Source, Topic
 
@@ -113,6 +114,7 @@ class WireConfig:
     topics: list[Topic]
     sources: list[Source]
     digest: DigestSettings
+    cluster: ClusterSettings = field(default_factory=ClusterSettings)
     schedule: dict[str, Any] = field(default_factory=dict)
     raw: dict[str, Any] = field(default_factory=dict)
 
@@ -327,6 +329,19 @@ def _parse_digest(raw: dict[str, Any]) -> DigestSettings:
         raise ConfigError(f"digest.yaml 配置无效: {exc}") from exc
 
 
+def _parse_cluster(raw: dict[str, Any]) -> ClusterSettings:
+    """读取 digest.yaml 的顶层 cluster 段；缺省时沿用内置阈值。"""
+    data = raw.get("cluster")
+    if data is None:
+        return ClusterSettings()
+    if not isinstance(data, dict):
+        raise ConfigError("digest.yaml cluster 必须是对象")
+    try:
+        return ClusterSettings.from_mapping(data)
+    except ValueError as exc:
+        raise ConfigError(f"digest.yaml cluster 配置无效: {exc}") from exc
+
+
 _ENV_PLACEHOLDER = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 
@@ -376,6 +391,7 @@ def load_config(
         topics=topics,
         sources=sources,
         digest=_parse_digest(raw_digest),
+        cluster=_parse_cluster(raw_digest),
         schedule=raw_schedule.get("schedule") or {},
         raw={"topics": raw_topics, "sources": raw_sources, "digest": raw_digest, "schedule": raw_schedule},
     )

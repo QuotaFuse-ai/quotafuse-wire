@@ -1,4 +1,4 @@
-"""`qfw config migrate` 必须在干净的配置目录上可用（QUOT-43 P1-2 / P1-3）。"""
+"""`qfw config migrate` 必须在干净的配置目录上可用（P1-2 / P1-3 回归）。"""
 from __future__ import annotations
 
 import json

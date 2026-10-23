@@ -139,6 +139,7 @@ def show_event(
                 "sources": ", ".join(event.sources),
                 "source_count": event.source_count,
                 "confidence": event.confidence,
+                "merge_reason": event.explanation.summary() if event.explanation else "未记录",
                 "first_seen": event.first_seen.isoformat() if event.first_seen else "",
                 "last_seen": event.last_seen.isoformat() if event.last_seen else "",
             },
