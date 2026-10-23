@@ -100,6 +100,24 @@ qfw serve
 
 喜欢命令行的也可以直接配环境变量或 `config/digest.yaml`，再运行 `qfw digest`，效果相同。
 
+### Docker Compose（可选）
+
+本机没有 Python 环境时，可直接用容器运行；数据仍落在宿主目录，不进入镜像。
+
+```bash
+git clone https://github.com/QuotaFuse-ai/quotafuse-wire.git
+cd quotafuse-wire
+cp .env.example .env            # 可选：设置 QF_WIRE_API_TOKEN 等
+docker compose up -d --build
+docker compose logs -f wire
+curl http://127.0.0.1:8790/api/health
+```
+
+- 打开 <http://127.0.0.1:8790>。宿主只发布回环地址 `127.0.0.1:8790`，外部无法直接访问。
+- `./data` 挂载到 `/data`，`./config` 挂载到 `/app/config`；镜像只含默认配置模板，不含用户数据与密钥。
+- 容器同时运行定时任务（`qfw serve --with-scheduler`），任务由 `config/schedule.yaml` 控制。
+- 停止：`docker compose down`（保留数据）。完整参数、备份与清理见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)。
+
 为便于已有部署平滑过渡，根目录保留同名脚本入口，统一委托新内核：
 
 ```bash

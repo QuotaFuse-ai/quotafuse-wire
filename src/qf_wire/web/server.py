@@ -9,6 +9,7 @@ from __future__ import annotations
 import ipaddress
 import json
 import os
+import re
 import secrets
 import threading
 import uuid
@@ -18,7 +19,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from qf_wire.config.ai import read_ai_settings, save_ai_settings
 from qf_wire.config.dotenv import LOCAL_FILENAME as LOCAL_ENV_NAME
@@ -26,6 +27,7 @@ from qf_wire.config.loader import WireConfig, load_config, multiuser_enabled
 from qf_wire.core.errors import ParamError, WireError
 from qf_wire.core.scheduler import digest_day, render_day, today_beijing
 from qf_wire.logging.setup import get_logger
+from qf_wire.provider.wire_provider import DEFAULT_WINDOW, parse_window
 from qf_wire.storage.sqlite import WireStore
 
 logger = get_logger(__name__)
@@ -62,6 +64,32 @@ def _is_private(host: str) -> bool:
 def _cors_origins() -> set[str]:
     raw = os.environ.get("QF_WIRE_CORS_ORIGINS") or ""
     return {item.strip().rstrip("/") for item in raw.split(",") if item.strip()}
+
+
+_SECRET_ENV = ("QF_WIRE_API_TOKEN", "QF_WIRE_API_KEY", "LLM_API_KEY", "OPENAI_API_KEY")
+_ABS_PATH_RE = re.compile(
+    r"(?:[A-Za-z]:[\\/][^\s\"'<>]*|/(?:[^\s\"'<>/]+/)+[^\s\"'<>]*)"
+)
+
+
+def _redact(message: object) -> str:
+    """错误回显只保留原因，去掉本机绝对路径与密钥。"""
+    text = str(message or "")
+    for name in _SECRET_ENV:
+        secret = (os.environ.get(name) or "").strip()
+        if len(secret) >= 6:
+            text = text.replace(secret, "***")
+    return _ABS_PATH_RE.sub("<path>", text)
+
+
+def _count_archive_days(archive_dir: Path) -> int:
+    if not archive_dir.is_dir():
+        return 0
+    return sum(
+        1
+        for child in archive_dir.iterdir()
+        if child.is_dir() and (child / "manifest.json").is_file()
+    )
 
 
 _JOB_LOCK = threading.Lock()
@@ -149,7 +177,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         try:
             self._dispatch_get()
         except WireError as exc:
-            self._send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            logger.warning("只读接口参数错误 %s: %s", self.path, exc)
+            self._send_json({"error": _redact(exc)}, HTTPStatus.BAD_REQUEST)
+        except Exception as exc:  # 不把堆栈或本机路径回给调用方
+            logger.exception("只读接口失败 %s", self.path)
+            self._send_json({"error": "服务器内部错误"}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def _dispatch_get(self) -> None:
         parsed = urlparse(self.path)
@@ -169,6 +201,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._api_sources(query)
         elif path == "/api/history":
             self._api_history(query)
+        elif path == "/api/status":
+            self._api_status()
+        elif path.startswith("/api/events/"):
+            self._api_event_by_id(unquote(path[len("/api/events/"):]))
         elif path == "/api/events":
             self._api_events(query)
         elif path == "/api/event":
@@ -186,7 +222,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
         try:
             self._dispatch_post()
         except WireError as exc:
-            self._send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            logger.warning("写接口参数错误 %s: %s", self.path, exc)
+            self._send_json({"error": _redact(exc)}, HTTPStatus.BAD_REQUEST)
+        except Exception:
+            logger.exception("写接口失败 %s", self.path)
+            self._send_json({"error": "服务器内部错误"}, HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def _dispatch_post(self) -> None:
         parsed = urlparse(self.path)
@@ -334,6 +374,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             store.close()
 
     def _api_events(self, query: dict[str, str]) -> None:
+        keyword = (query.get("keyword") or "").strip()
+        topic = self._topic_id(query.get("topic"))
+        if keyword:
+            self._api_events_by_keyword(keyword, query.get("window"), topic)
+            return
         store = self._open_store()
         if store is None:
             return
@@ -342,7 +387,6 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if day is None:
                 self._send_json({"date": None, "events": []}, HTTPStatus.NOT_FOUND)
                 return
-            topic = self._topic_id(query.get("topic"))
             events = store.events_for_topic(topic=topic, day=day, limit=200)
             self._send_json(
                 {
@@ -353,11 +397,45 @@ class DashboardHandler(BaseHTTPRequestHandler):
         finally:
             store.close()
 
+    def _api_events_by_keyword(self, keyword: str, window: str | None, topic: str | None) -> None:
+        try:
+            delta = parse_window(window)
+        except ValueError as exc:
+            self._send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+            return
+        since = datetime.now(timezone.utc) - delta
+        store = self._open_store()
+        if store is None:
+            return
+        try:
+            events = store.search_events(keyword=keyword, topic=topic, since=since, limit=200)
+            self._send_json(
+                {
+                    "keyword": keyword,
+                    "window": window or DEFAULT_WINDOW,
+                    "since": since,
+                    "topic": topic,
+                    "events": [event.model_dump(mode="json") for event in events],
+                }
+            )
+        finally:
+            store.close()
+
     def _api_event(self, query: dict[str, str]) -> None:
-        event_id = query.get("id")
+        event_id = (query.get("id") or "").strip()
         if not event_id:
             self._send_json({"error": "缺少 id"}, HTTPStatus.BAD_REQUEST)
             return
+        self._send_event(event_id)
+
+    def _api_event_by_id(self, event_id: str) -> None:
+        event_id = (event_id or "").strip()
+        if not event_id:
+            self._send_json({"error": "缺少事件 id"}, HTTPStatus.BAD_REQUEST)
+            return
+        self._send_event(event_id)
+
+    def _send_event(self, event_id: str) -> None:
         store = self._open_store()
         if store is None:
             return
@@ -375,6 +453,58 @@ class DashboardHandler(BaseHTTPRequestHandler):
             )
         finally:
             store.close()
+
+    def _api_status(self) -> None:
+        """运维概览：最近一次运行、各源状态、降级源与归档天数。冷启动也返回 200。"""
+        config = self._request_config()
+        payload: dict[str, Any] = {
+            "generatedAt": datetime.now(timezone.utc).isoformat(),
+            "lastRun": None,
+            "sourceDate": None,
+            "sources": [],
+            "degradedSources": [],
+            "archiveDays": _count_archive_days(config.paths.archive_dir),
+        }
+        if not config.paths.db_path.is_file():
+            self._send_json(payload)
+            return
+        store = WireStore(config.paths.db_path)
+        store.initialize()
+        try:
+            last = store.last_run()
+            if last:
+                payload["lastRun"] = {
+                    "runId": last.get("run_id"),
+                    "startedAt": last.get("started_at"),
+                    "finishedAt": last.get("finished_at"),
+                    "day": last.get("day"),
+                    "topic": last.get("topic"),
+                    "mode": last.get("mode"),
+                    "status": last.get("status"),
+                    "exitCode": last.get("exit_code"),
+                    "sourceTotal": last.get("source_total"),
+                    "sourceOk": last.get("source_ok"),
+                    "sourceDegraded": last.get("source_degraded"),
+                    "sourceUnavailable": last.get("source_unavailable"),
+                    "itemCount": last.get("item_count"),
+                }
+            day = store.latest_source_day()
+            rows = store.source_status(day) if day else []
+            payload["sourceDate"] = day
+            payload["sources"] = rows
+            payload["degradedSources"] = [
+                {
+                    "sourceId": row["source_id"],
+                    "name": row["source_name"] or row["source_id"],
+                    "status": row["status"],
+                    "error": row.get("error") or "",
+                }
+                for row in rows
+                if row["status"] in {"degraded", "unavailable"}
+            ]
+        finally:
+            store.close()
+        self._send_json(payload)
 
     def _api_settings(self) -> None:
         self._send_json(read_ai_settings(self._request_config()).as_dict())
@@ -395,7 +525,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
             return
         except (OSError, ValueError) as exc:
-            self._send_json({"error": f"写入 {LOCAL_ENV_NAME} 失败: {exc}"}, HTTPStatus.INTERNAL_SERVER_ERROR)
+            logger.warning("写入 %s 失败: %s", LOCAL_ENV_NAME, exc)
+            self._send_json(
+                {"error": f"写入 {LOCAL_ENV_NAME} 失败，请检查目录权限"},
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+            )
             return
         self._send_json(settings.as_dict())
 
@@ -480,16 +614,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
         return self._active_config
 
     def _guard_read(self) -> bool:
-        """只读接口鉴权：token 未配置时仅回环/可信内网可读。"""
+        """只读接口鉴权：默认仅回环；强制 token 时所有接口（含 health）都要 Bearer。"""
         path = urlparse(self.path).path
-        if path in PUBLIC_PATHS:
+        force_token = _env_flag("QF_WIRE_API_REQUIRE_TOKEN")
+        if path in PUBLIC_PATHS and not force_token:
             return True
         if not (path == "/data.js" or path.startswith("/api/")):
             return True
         client = (self.client_address[0] if self.client_address else "") or ""
         token = (os.environ.get("QF_WIRE_API_TOKEN") or "").strip()
         if token:
-            if _is_loopback(client) and not _env_flag("QF_WIRE_API_REQUIRE_TOKEN"):
+            if _is_loopback(client) and not force_token:
                 return True
             header = self.headers.get("Authorization") or ""
             scheme, _, value = header.partition(" ")
@@ -497,6 +632,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 return True
             self._send_json(
                 {"error": "只读 API 需要 Authorization: Bearer <token>"},
+                HTTPStatus.UNAUTHORIZED,
+            )
+            return False
+        if force_token:
+            self._send_json(
+                {"error": "已开启强制鉴权，但没有配置 QF_WIRE_API_TOKEN"},
                 HTTPStatus.UNAUTHORIZED,
             )
             return False

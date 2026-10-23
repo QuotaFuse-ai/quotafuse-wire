@@ -40,6 +40,20 @@ def _day(value: date | str) -> str:
     return value.isoformat() if isinstance(value, date) else str(value)
 
 
+def _event_time(event: Event) -> datetime:
+    value = event.last_seen or event.first_seen
+    if value is None:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def _event_matches(event: Event, needle: str) -> bool:
+    values: list[str] = [event.title, *event.sources]
+    for item in event.items:
+        values.extend((item.title, item.summary, item.zh))
+    return any(needle in (value or "").lower() for value in values)
+
+
 def split_sql(script: str) -> list[str]:
     """按完整语句切分 SQL 文件，跳过纯注释行。"""
     statements: list[str] = []
@@ -450,6 +464,50 @@ class WireStore:
         with self.engine.connect() as conn:
             rows = conn.execute(text(sql), params).mappings().all()
             return [self._row_to_event(conn, row) for row in rows]
+
+    def search_events(
+        self,
+        *,
+        keyword: str | None = None,
+        topic: str | None = None,
+        day: date | str | None = None,
+        since: datetime | None = None,
+        limit: int = 200,
+    ) -> list[Event]:
+        """按赛道、日期或时间起点与关键词过滤事件；关键词匹配标题与关联条目正文。"""
+        self.initialize()
+        sql = "SELECT * FROM events WHERE 1 = 1"
+        params: dict[str, Any] = {}
+        if topic:
+            sql += " AND topic = :topic"
+            params["topic"] = topic
+        if day:
+            sql += " AND day = :day"
+            params["day"] = _day(day)
+        sql += " ORDER BY COALESCE(last_seen, updated_at) DESC"
+        needle = (keyword or "").strip().lower()
+        result: list[Event] = []
+        with self.engine.connect() as conn:
+            rows = conn.execute(text(sql), params).mappings().all()
+            for row in rows:
+                event = self._row_to_event(conn, row)
+                if since is not None and _event_time(event) < since:
+                    continue
+                if needle and not _event_matches(event, needle):
+                    continue
+                result.append(event)
+                if len(result) >= limit:
+                    break
+        return result
+
+    def last_run(self) -> dict[str, Any] | None:
+        """最近一次运行记录（含状态与条目数），供 /api/status 使用。"""
+        self.initialize()
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                text("SELECT * FROM runs ORDER BY started_at DESC, id DESC LIMIT 1")
+            ).mappings().first()
+        return dict(row) if row else None
 
     def get_event(self, event_id: str) -> Event | None:
         self.initialize()
