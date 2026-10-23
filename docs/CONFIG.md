@@ -85,8 +85,22 @@ schedule:
     - id: daily_run
       cron: "0 7 * * *"
       command: run
+      options:
+        topics: all
+    - id: daily_digest
+      cron: "10 7 * * *"
+      command: digest
+    - id: weekly_source_check
+      cron: "0 6 * * 1"
+      command: sources validate
+      options:
+        timeout_sec: 10
 ```
-仅在 `enabled: true` 时由内置调度器执行。
+
+- `command` 只接受 `run`、`digest`、`sources validate`；
+- `cron` 是标准 5 段表达式，`timezone` 无效或 cron 不合法时启动直接报错（退出码 3）；
+- `options.topics` 可为 `all`、单个赛道 id 或 id 列表；`run` 支持 `sources_only` / `max_workers`，`sources validate` 支持 `timeout_sec` / `max_workers`；
+- 仅在 `enabled: true` 时由内置调度器执行：`qfw serve --with-scheduler` 随看板同进程运行，或 `qfw schedule` 单独运行；`--once` 立即执行一轮，`--dry-run` 只打印任务表。
 
 ## 模型配置
 

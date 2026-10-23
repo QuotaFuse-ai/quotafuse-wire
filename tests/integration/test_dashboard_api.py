@@ -26,6 +26,12 @@ ENV_KEYS = (
     "LLM_BASE_URL",
     "OPENAI_API_KEY",
     "OPENAI_BASE_URL",
+    "QF_WIRE_API_TOKEN",
+    "QF_WIRE_API_REQUIRE_TOKEN",
+    "QF_WIRE_CORS_ORIGINS",
+    "QF_WIRE_ALLOW_PRIVATE_NETWORK",
+    "QF_WIRE_MULTIUSER",
+    "QF_WIRE_USER",
 )
 
 API_DIGEST = {
@@ -73,18 +79,30 @@ def api_dashboard(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, isolated_env)
         server.server_close()
 
 
-def _request(base: str, path: str, *, method: str = "GET", payload: Any = None, signed: bool = True):
+def _request(
+    base: str,
+    path: str,
+    *,
+    method: str = "GET",
+    payload: Any = None,
+    signed: bool = True,
+    headers: dict[str, str] | None = None,
+):
     body = json.dumps(payload).encode("utf-8") if payload is not None else None
     request = urllib.request.Request(base + path, data=body, method=method)
     if signed:
         request.add_header("X-Wire-Request", "1")
+    for key, value in (headers or {}).items():
+        request.add_header(key, value)
     if body is not None:
         request.add_header("Content-Type", "application/json")
     try:
         with urllib.request.urlopen(request, timeout=10) as response:
-            return response.status, json.loads(response.read().decode("utf-8"))
+            raw = response.read()
+            return response.status, json.loads(raw.decode("utf-8")) if raw else {}
     except urllib.error.HTTPError as exc:
-        return exc.code, json.loads(exc.read().decode("utf-8"))
+        raw = exc.read()
+        return exc.code, json.loads(raw.decode("utf-8")) if raw else {}
 
 
 def test_settings_read_defaults(dashboard) -> None:
@@ -170,3 +188,125 @@ def test_digest_job_starts_idle(dashboard) -> None:
 
     assert status == 200
     assert body["job"]["state"] == "idle"
+
+
+def _raw_request(base: str, path: str, *, method: str = "GET", headers: dict[str, str] | None = None):
+    request = urllib.request.Request(base + path, method=method)
+    for key, value in (headers or {}).items():
+        request.add_header(key, value)
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return response.status, dict(response.headers), response.read()
+    except urllib.error.HTTPError as exc:
+        return exc.code, dict(exc.headers), exc.read()
+
+
+def test_token_required_when_forced_on_loopback(dashboard, monkeypatch: pytest.MonkeyPatch) -> None:
+    base, _, _ = dashboard
+    monkeypatch.setenv("QF_WIRE_API_TOKEN", "s3cret")
+    monkeypatch.setenv("QF_WIRE_API_REQUIRE_TOKEN", "true")
+
+    status, body = _request(base, "/api/settings")
+    assert status == 401
+    assert "Bearer" in body["error"]
+
+    status, _ = _request(base, "/api/settings", headers={"Authorization": "Bearer wrong"})
+    assert status == 401
+
+    status, body = _request(base, "/api/settings", headers={"Authorization": "Bearer s3cret"})
+    assert status == 200
+    assert body["provider"] == "claude-cli"
+
+    status, _ = _request(base, "/api/health")
+    assert status == 200
+
+
+def test_token_not_required_for_local_browser(dashboard, monkeypatch: pytest.MonkeyPatch) -> None:
+    base, _, _ = dashboard
+    monkeypatch.setenv("QF_WIRE_API_TOKEN", "s3cret")
+
+    status, _ = _request(base, "/api/settings")
+
+    assert status == 200
+
+
+def test_cors_preflight_allows_configured_origin(dashboard, monkeypatch: pytest.MonkeyPatch) -> None:
+    base, _, _ = dashboard
+    monkeypatch.setenv("QF_WIRE_CORS_ORIGINS", "https://board.example")
+
+    status, headers, body = _raw_request(
+        base,
+        "/api/digest",
+        method="OPTIONS",
+        headers={
+            "Origin": "https://board.example",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert status == 204
+    assert headers.get("Access-Control-Allow-Origin") == "https://board.example"
+    assert "Authorization" in headers.get("Access-Control-Allow-Headers", "")
+    assert body == b""
+
+
+def test_cors_preflight_rejects_unknown_origin(dashboard, monkeypatch: pytest.MonkeyPatch) -> None:
+    base, _, _ = dashboard
+    monkeypatch.setenv("QF_WIRE_CORS_ORIGINS", "https://board.example")
+
+    status, _, _ = _raw_request(
+        base, "/api/digest", method="OPTIONS", headers={"Origin": "https://evil.example"}
+    )
+
+    assert status == 403
+
+
+def test_cors_header_on_actual_response(dashboard, monkeypatch: pytest.MonkeyPatch) -> None:
+    base, _, _ = dashboard
+    monkeypatch.setenv("QF_WIRE_CORS_ORIGINS", "https://board.example")
+
+    status, headers, _ = _raw_request(
+        base, "/api/health", headers={"Origin": "https://board.example"}
+    )
+
+    assert status == 200
+    assert headers.get("Access-Control-Allow-Origin") == "https://board.example"
+
+
+def test_multiuser_header_selects_separate_data_dirs(dashboard, monkeypatch: pytest.MonkeyPatch) -> None:
+    base, _, tmp_path = dashboard
+    monkeypatch.setenv("QF_WIRE_MULTIUSER", "true")
+    alice = tmp_path / "data" / "users" / "alice"
+    bob = tmp_path / "data" / "users" / "bob"
+    alice.mkdir(parents=True)
+    bob.mkdir(parents=True)
+    (alice / "data.js").write_text('window.DATA = {"owner": "alice"};', encoding="utf-8")
+    (bob / "data.js").write_text('window.DATA = {"owner": "bob"};', encoding="utf-8")
+
+    alice_status, _, alice_body = _raw_request(base, "/data.js", headers={"X-QF-User": "alice"})
+    bob_status, _, bob_body = _raw_request(base, "/data.js", headers={"X-QF-User": "bob"})
+
+    assert alice_status == bob_status == 200
+    assert b"alice" in alice_body
+    assert b"bob" in bob_body
+    assert b"bob" not in alice_body
+
+
+def test_multiuser_rejects_traversal_header(dashboard, monkeypatch: pytest.MonkeyPatch) -> None:
+    base, _, _ = dashboard
+    monkeypatch.setenv("QF_WIRE_MULTIUSER", "true")
+
+    status, body = _request(base, "/api/settings", headers={"X-QF-User": "../escape"})
+
+    assert status == 400
+    assert "用户 id" in body["error"]
+
+
+def test_multiuser_requires_user_header(dashboard, monkeypatch: pytest.MonkeyPatch) -> None:
+    base, _, _ = dashboard
+    monkeypatch.setenv("QF_WIRE_MULTIUSER", "true")
+
+    status, body = _request(base, "/api/settings")
+
+    assert status == 400
+    assert "QF_WIRE_USER" in body["error"]

@@ -19,6 +19,7 @@ from qf_wire.cli.event import event_app
 from qf_wire.cli.history import history_command
 from qf_wire.cli.mcp import mcp_app
 from qf_wire.cli.run import run_command
+from qf_wire.cli.schedule import schedule_command
 from qf_wire.cli.serve import serve_command
 from qf_wire.cli.sources import sources_app
 from qf_wire.cli.topics import topics_app
@@ -53,6 +54,7 @@ def _root(
     ),
     config_dir: Path = typer.Option(None, "--config-dir", help="配置目录（默认 <root>/config）"),
     data_dir: Path = typer.Option(None, "--data-dir", help="数据目录（默认 <root>/data）"),
+    user: str = typer.Option(None, "--user", help="多用户模式下的用户 id（也可用 QF_WIRE_USER）"),
     log_level: str = typer.Option(None, "--log-level", help="日志级别（stderr）"),
     version: bool = typer.Option(False, "--version", help="打印版本号"),
 ) -> None:
@@ -63,9 +65,9 @@ def _root(
     if fmt not in OUTPUT_FORMATS:
         raise typer.BadParameter(f"--output 只支持 {', '.join(OUTPUT_FORMATS)}")
     setup_logging(log_level)
-    ctx.obj = AppContext(output=fmt, config_dir=config_dir, data_dir=data_dir)
+    ctx.obj = AppContext(output=fmt, config_dir=config_dir, data_dir=data_dir, user=user)
 
-    paths = resolve_paths(config_dir, data_dir)
+    paths = resolve_paths(config_dir, data_dir, user)
     report = auto_migrate([Path.cwd(), paths.data_dir.parent], paths.config_dir)
     if report is not None:
         for line in report.lines:
@@ -79,6 +81,7 @@ def _root(
 app.command("run")(run_command)
 app.command("digest")(digest_command)
 app.command("serve")(serve_command)
+app.command("schedule")(schedule_command)
 app.command("history")(history_command)
 
 

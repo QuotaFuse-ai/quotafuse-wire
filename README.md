@@ -134,6 +134,12 @@ qfw digest --date 2026-10-22     # 对指定日期数据重新提炼
 
 # 看板
 qfw serve --port 8790            # 启动本地看板
+qfw serve --with-scheduler       # 看板 + 定时任务同进程
+
+# 定时调度
+qfw schedule --dry-run           # 查看 schedule.yaml 的任务表
+qfw schedule --once              # 立即执行一轮启用的任务
+qfw schedule                     # 常驻调度（Ctrl+C 退出）
 
 # 信源与赛道
 qfw sources list
