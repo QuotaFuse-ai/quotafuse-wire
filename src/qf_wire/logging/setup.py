@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import logging
+import logging.handlers
 import os
 import sys
+from pathlib import Path
 
 from qf_wire.logging.formatters import JsonFormatter, TextFormatter
 
@@ -25,6 +27,18 @@ def setup_logging(level: str | None = None, force: bool = False) -> None:
     root = logging.getLogger("qf_wire")
     root.handlers.clear()
     root.addHandler(handler)
+    log_file = (os.environ.get("QF_WIRE_LOG_FILE") or "").strip()
+    if log_file:
+        try:
+            path = Path(log_file).expanduser()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            file_handler = logging.handlers.RotatingFileHandler(
+                path, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+            )
+            file_handler.setFormatter(handler.formatter)
+            root.addHandler(file_handler)
+        except OSError as exc:  # 写不了文件也不能影响主流程
+            sys.stderr.write(f"[qfw] 无法写入日志文件 {log_file}: {exc}\n")
     root.setLevel(getattr(logging, resolved, logging.INFO))
     root.propagate = False
 

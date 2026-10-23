@@ -28,12 +28,40 @@ CONFIG_FILES = {
 }
 
 
+USER_ENV = "QF_WIRE_USER"
+MULTIUSER_ENV = "QF_WIRE_MULTIUSER"
+USER_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def multiuser_enabled() -> bool:
+    return _truthy(os.environ.get(MULTIUSER_ENV))
+
+
+def resolve_user(explicit: str | None = None) -> str | None:
+    """多用户模式下解析用户 id；关闭时忽略显式值。"""
+    if not multiuser_enabled():
+        return None
+    user = (explicit or os.environ.get(USER_ENV) or "").strip()
+    if not user:
+        raise ConfigError(f"多用户模式已开启，请用 --user 或 {USER_ENV} 指定用户")
+    if not USER_ID_PATTERN.fullmatch(user):
+        raise ConfigError(f"用户 id 只允许字母、数字、下划线和短横线（1-64 位）: {user}")
+    return user
+
+
 @dataclass(slots=True)
 class Paths:
     root: Path
     config_dir: Path
     data_dir: Path
     prompts_dir: Path
+    user: str = ""
+    base_config_dir: Path | None = None
+    base_data_dir: Path | None = None
 
     @property
     def db_path(self) -> Path:
@@ -170,18 +198,42 @@ def _resolve_root() -> Path:
     return package_root
 
 
-def resolve_paths(config_dir: str | Path | None = None, data_dir: str | Path | None = None) -> Paths:
+def resolve_paths(
+    config_dir: str | Path | None = None,
+    data_dir: str | Path | None = None,
+    user: str | None = None,
+) -> Paths:
     root = _resolve_root()
-    config = Path(config_dir or os.environ.get("QF_WIRE_CONFIG_DIR") or root / "config").expanduser().resolve()
-    data = Path(data_dir or os.environ.get("QF_WIRE_DATA_DIR") or root / "data").expanduser().resolve()
+    base_config = Path(config_dir or os.environ.get("QF_WIRE_CONFIG_DIR") or root / "config").expanduser().resolve()
+    base_data = Path(data_dir or os.environ.get("QF_WIRE_DATA_DIR") or root / "data").expanduser().resolve()
+    active_user = resolve_user(user)
+    config, data = base_config, base_data
     prompts_env = os.environ.get("QF_WIRE_PROMPTS_DIR")
+    if active_user:
+        # 每个用户独立 SQLite/归档/data.js；用户目录里有完整配置时优先使用
+        data = base_data / "users" / active_user
+        candidate = data / "config"
+        if all((candidate / name).is_file() for name in CONFIG_FILES.values()):
+            config = candidate
     if prompts_env:
         prompts = Path(prompts_env).expanduser().resolve()
+    elif active_user and config != base_config:
+        prompts = config.parent / "prompts"
+        if not prompts.is_dir():
+            prompts = root / "prompts"
     else:
         prompts = config.parent / "prompts"
         if not prompts.is_dir():
             prompts = root / "prompts"
-    return Paths(root=root, config_dir=config, data_dir=data, prompts_dir=prompts)
+    return Paths(
+        root=root,
+        config_dir=config,
+        data_dir=data,
+        prompts_dir=prompts,
+        user=active_user or "",
+        base_config_dir=base_config,
+        base_data_dir=base_data,
+    )
 
 
 def _parse_sources(raw: dict[str, Any]) -> list[Source]:
@@ -290,9 +342,13 @@ def _format_validation(exc: ValidationError) -> str:
     return "; ".join(parts)
 
 
-def load_config(config_dir: str | Path | None = None, data_dir: str | Path | None = None) -> WireConfig:
+def load_config(
+    config_dir: str | Path | None = None,
+    data_dir: str | Path | None = None,
+    user: str | None = None,
+) -> WireConfig:
     """加载并解析全部配置；结构问题抛 ConfigError。"""
-    paths = resolve_paths(config_dir, data_dir)
+    paths = resolve_paths(config_dir, data_dir, user)
     raw_topics = _read_yaml(paths.config_dir / CONFIG_FILES["topics"])
     raw_sources = _read_yaml(paths.config_dir / CONFIG_FILES["sources"])
     raw_digest = _read_yaml(paths.config_dir / CONFIG_FILES["digest"])
