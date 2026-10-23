@@ -358,15 +358,22 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not event_id:
             self._send_json({"error": "缺少 id"}, HTTPStatus.BAD_REQUEST)
             return
+        day = query.get("date") or None
+        if day:
+            try:
+                day = date.fromisoformat(day).isoformat()
+            except ValueError:
+                self._send_json({"error": "date 格式应为 YYYY-MM-DD"}, HTTPStatus.BAD_REQUEST)
+                return
         store = self._open_store()
         if store is None:
             return
         try:
-            event = store.get_event(event_id)
+            event = store.get_event(event_id, day)
             if event is None:
                 self._send_json({"error": "事件不存在"}, HTTPStatus.NOT_FOUND)
                 return
-            timeline = store.event_timeline(event_id)
+            timeline = store.event_timeline(event_id, day)
             self._send_json(
                 {
                     "event": event.model_dump(mode="json"),
