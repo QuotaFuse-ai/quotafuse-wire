@@ -23,11 +23,12 @@ class AppContext:
     output: str = DEFAULT_OUTPUT
     config_dir: Path | None = None
     data_dir: Path | None = None
+    user: str | None = None
     _config: WireConfig | None = field(default=None, repr=False)
 
     def config(self) -> WireConfig:
         if self._config is None:
-            self._config = load_config(self.config_dir, self.data_dir)
+            self._config = load_config(self.config_dir, self.data_dir, user=self.user)
         return self._config
 
     def open_store(self) -> WireStore:

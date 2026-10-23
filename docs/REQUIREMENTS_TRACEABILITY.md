@@ -55,10 +55,10 @@
 
 | # | 要求 | 落地位置 | 验收 |
 |---|---|---|---|
-| R5.1 | Docker Compose 一键部署 | `docker-compose.yml`、`Dockerfile` | 干净机器 `docker compose up -d` 后看板可访问 |
-| R5.2 | 只读 API，默认仅本机 | `web/server.py` | 非回环 IP 访问被拒；带 token 后可访问 |
-| R5.3 | 多用户配置隔离 | `QF_WIRE_MULTIUSER` | 两个 user 目录互不可见，`../` 注入被拒 |
-| R5.4 | 定时调度（APScheduler 或 cron 模板） | `config/schedule.yaml` | 到点自动 `run`，日志落盘 |
+| R5.1 | Docker Compose 一键部署 | `docker-compose.yml`、`Dockerfile`、`docs/DEPLOYMENT.md` | 干净机器 `docker compose up -d` 后 `/api/health` 返回 ok；`./data` 持久化 |
+| R5.2 | 只读 API，默认仅本机 | `web/server.py`（`_guard_read` / `_guard_write` / `_cors_headers`） | 非回环 IP 访问被拒；`QF_WIRE_API_TOKEN` + Bearer 后可访问；`tests/unit/test_web_guard.py`、`tests/integration/test_dashboard_api.py` |
+| R5.3 | 多用户配置隔离 | `config/loader.py`（`resolve_user` / `resolve_paths`）、`web/server.py`（`X-QF-User`） | 两个 user 目录互不可见；`../`、斜杠、超长 id 被拒（400）；`tests/unit/config/test_multiuser.py` |
+| R5.4 | 定时调度（APScheduler 或 cron 模板） | `core/jobs.py`、`cli/schedule.py`、`web/server.py --with-scheduler` | 到点自动 `run` / `digest` / `sources validate`；日志写 stderr 与 `QF_WIRE_LOG_FILE`；`tests/unit/core/test_jobs.py`、`tests/unit/cli/test_schedule.py` |
 
 ## 三、CLI 契约
 
@@ -66,7 +66,8 @@
 |---|---|---|
 | `qfw run [--topic] [--sources-only]` | 全量/单赛道采集，可选跳过提炼 | 0 / 2 / 3 / 4 / 8 |
 | `qfw digest --date` | 指定日期重提炼 | 同上 |
-| `qfw serve --port` | 本地看板 + 只读 API | 0 / 3 |
+| `qfw serve --port [--with-scheduler]` | 本地看板 + 只读 API；`--with-scheduler` 同时启动定时任务 | 0 / 3 |
+| `qfw schedule [--once\|--dry-run]` | 常驻调度 / 立即执行一轮 / 只打印任务表 | 0 / 3 / 8 |
 | `qfw sources list\|validate` | 列出/探测源 | 0 / 4 |
 | `qfw topics list\|add --file` | 赛道管理 | 0 / 2 / 3 |
 | `qfw history --topic --days` | 历史查询 | 0 / 2 |
