@@ -113,11 +113,12 @@
   .panel-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
   .panel-head h3 { margin: 0; }
   .panel-note { color: var(--muted); font-size: 11.5px; }
+  .digest-actions { margin-left: auto; display: flex; gap: 8px; }
+  .digest-actions button { padding: 5px 11px; font-size: 12.5px; }
   .digest-body {
-    display: grid; gap: 20px; align-items: start;
-    grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr);
+    display: grid; gap: 14px; align-items: start;
+    grid-template-columns: minmax(0, 1fr);
   }
-  .digest-body.single { grid-template-columns: minmax(0, 1fr); }
   .digest-text { white-space: pre-wrap; line-height: 1.75; font-size: 14px; }
   .digest-summary { margin: 0; }
   .digest-warn { margin: 10px 0 0; color: var(--warn); font-size: 12.5px; line-height: 1.6; }
@@ -447,7 +448,23 @@
     var head = el("div", "panel-head");
     head.appendChild(el("h3", null, (industry.name || industry.key || "") + " 今日要点"));
     head.appendChild(el("span", "panel-note", state === "ok" ? "由模型提炼 · 跨源去重" : ""));
+    var hasContent = Boolean(summary || keyPoints.length);
+    if (state !== "missing" && hasContent) {
+      var headActions = el("div", "digest-actions");
+      var regenerate = el("button", null, "重新生成");
+      regenerate.type = "button";
+      regenerate.addEventListener("click", function () {
+        startTopicDigest(industry.id || industry.key, regenerate, true);
+      });
+      headActions.appendChild(regenerate);
+      head.appendChild(headActions);
+    }
     panel.appendChild(head);
+
+    if (digestNotice) {
+      panel.appendChild(el("p", "digest-warn", digestNotice));
+      digestNotice = "";
+    }
 
     if (state === "missing") {
       var hint = el("div", "empty-state");
@@ -488,7 +505,7 @@
       return;
     }
 
-    var body = el("div", "digest-body" + (keyPoints.length ? "" : " single"));
+    var body = el("div", "digest-body");
     var text = el("div", "digest-text");
     if (summary) text.appendChild(el("p", "digest-summary", summary));
     if (state === "partial") {
@@ -714,6 +731,8 @@
 
   var pollTimer = null;
   var flashMessage = "";
+  var digestNotice = "";
+  var digestPollTimer = null;
   var lastDoneJob = "";
 
   function stopPolling() {
@@ -763,13 +782,18 @@
     holder.style.display = holder.childNodes.length ? "" : "none";
   }
 
-  function startTopicDigest(topicId, button) {
+  function startTopicDigest(topicId, button, stay) {
     var original = button ? button.textContent : "";
     if (button) {
       button.disabled = true;
       button.textContent = "正在开始…";
     }
     apiRequest("/api/digest/run", "POST", { topic: topicId || "" }).then(function () {
+      if (stay) {
+        if (button) button.textContent = "正在生成…";
+        waitForDigest(button, original);
+        return;
+      }
       if (button) button.textContent = "已开始";
       if (location.hash === "#/settings") render();
       else location.hash = "#/settings";
@@ -782,6 +806,35 @@
       if (location.hash === "#/settings") render();
       else location.hash = "#/settings";
     });
+  }
+
+  function waitForDigest(button, original) {
+    if (digestPollTimer !== null) clearInterval(digestPollTimer);
+    digestPollTimer = setInterval(function () {
+      apiRequest("/api/digest/job").then(function (body) {
+        var job = body.job || {};
+        if (job.state === "running") return;
+        clearInterval(digestPollTimer);
+        digestPollTimer = null;
+        if (button) {
+          button.disabled = false;
+          button.textContent = original || "重新生成";
+        }
+        if (job.state === "error") {
+          digestNotice = "生成失败：" + (job.error || "未知错误") + "。可到「AI 与生成」检查模型配置后重试。";
+        }
+        load();
+      }).catch(function () {
+        clearInterval(digestPollTimer);
+        digestPollTimer = null;
+        if (button) {
+          button.disabled = false;
+          button.textContent = original || "重新生成";
+        }
+        digestNotice = "暂时无法获取生成进度，请稍后刷新页面查看。";
+        load();
+      });
+    }, 2000);
   }
 
   function renderSettings(main) {
