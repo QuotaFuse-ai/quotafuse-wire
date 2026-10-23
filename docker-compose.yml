@@ -9,22 +9,22 @@ services:
     # 看板与定时任务同进程：schedule.yaml 未启用时仅提供看板
     command: ["qfw", "serve", "--host", "0.0.0.0", "--port", "8790", "--with-scheduler"]
     ports:
-      - "127.0.0.1:8790:8790"   # 本地看板，仅本机监听
-      - "127.0.0.1:8791:8791"   # MCP http，仅本机监听
+      # 容器内监听 0.0.0.0，宿主只发布到回环；远程访问必须自行加反向代理与 token
+      - "127.0.0.1:8790:8790"
     environment:
       QF_WIRE_DATA_DIR: /data
       QF_WIRE_CONFIG_DIR: /app/config
       QF_WIRE_HOST: "0.0.0.0"
       QF_WIRE_PORT: "8790"
-      QF_WIRE_MCP_HOST: "0.0.0.0"
-      QF_WIRE_MCP_PORT: "8791"
       QF_WIRE_MULTIUSER: "${QF_WIRE_MULTIUSER:-false}"
       QF_WIRE_LOG_LEVEL: "${QF_WIRE_LOG_LEVEL:-INFO}"
       # 只读 API 鉴权（R5.2）： token 为空时仅容器内回环可读
       QF_WIRE_API_TOKEN: "${QF_WIRE_API_TOKEN:-}"
       QF_WIRE_API_REQUIRE_TOKEN: "${QF_WIRE_API_REQUIRE_TOKEN:-false}"
       QF_WIRE_CORS_ORIGINS: "${QF_WIRE_CORS_ORIGINS:-}"
-      QF_WIRE_ALLOW_PRIVATE_NETWORK: "${QF_WIRE_ALLOW_PRIVATE_NETWORK:-false}"
+      # 端口映射后容器看到的来源是 docker 网关地址；配合宿主只发布 127.0.0.1，
+      # 外部仍不可直达。若接入不可信容器网络，请设为 false 并配置 QF_WIRE_API_TOKEN。
+      QF_WIRE_ALLOW_PRIVATE_NETWORK: "${QF_WIRE_ALLOW_PRIVATE_NETWORK:-true}"
       # 模型凭证在容器内通过看板写入 data/.env.local，持久化在 /data
       QF_WIRE_DIGEST_PROVIDER: "${QF_WIRE_DIGEST_PROVIDER:-}"
       QF_WIRE_DIGEST_MODEL: "${QF_WIRE_DIGEST_MODEL:-}"
@@ -37,7 +37,17 @@ services:
       - ./data:/data
       - ./config:/app/config
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8790/api/health', timeout=3)"]
+      # 强制鉴权（QF_WIRE_API_REQUIRE_TOKEN=1）时 health 也需要 Bearer
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import os, urllib.request as u;
+          req = u.Request('http://127.0.0.1:8790/api/health');
+          t = os.environ.get('QF_WIRE_API_TOKEN', '');
+          req.add_header('Authorization', 'Bearer ' + t) if t else None;
+          u.urlopen(req, timeout=3)
       interval: 30s
       timeout: 5s
       retries: 3
