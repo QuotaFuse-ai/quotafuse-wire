@@ -1,6 +1,7 @@
 """qfw event：事件列表、事件详情与多源时间线。"""
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 import typer
@@ -73,10 +74,11 @@ def _list_events(app_ctx: AppContext, topic: str | None, day: str | None, limit:
         emit_rows(rows, EVENT_COLUMNS, app_ctx.output)
 
 
-def _require_event(store: Any, event_id: str) -> Event:
-    event = store.get_event(event_id)
+def _require_event(store: Any, event_id: str, day: date | None = None) -> Event:
+    event = store.get_event(event_id, day)
     if event is None:
-        raise NotFoundError(f"事件不存在: {event_id}")
+        suffix = f"（{day.isoformat()}）" if day else ""
+        raise NotFoundError(f"事件不存在: {event_id}{suffix}")
     return event
 
 
@@ -107,12 +109,14 @@ def list_events(
 def show_event(
     ctx: typer.Context,
     event_id: str = typer.Argument(..., help="事件 id"),
+    day: str = typer.Option(None, "--date", help="事件所属日期，默认取最近一次采集"),
 ) -> int:
     app_ctx: AppContext = ctx.obj
+    target_day = parse_day(day)
     store = app_ctx.open_store()
     try:
-        event = _require_event(store, event_id)
-        reports = store.event_timeline(event_id)
+        event = _require_event(store, event_id, target_day)
+        reports = store.event_timeline(event_id, target_day)
     finally:
         store.close()
 
@@ -148,12 +152,14 @@ def show_event(
 def show_timeline(
     ctx: typer.Context,
     event_id: str = typer.Argument(..., help="事件 id"),
+    day: str = typer.Option(None, "--date", help="事件所属日期，默认取最近一次采集"),
 ) -> int:
     app_ctx: AppContext = ctx.obj
+    target_day = parse_day(day)
     store = app_ctx.open_store()
     try:
-        _require_event(store, event_id)
-        reports = store.event_timeline(event_id)
+        _require_event(store, event_id, target_day)
+        reports = store.event_timeline(event_id, target_day)
     finally:
         store.close()
 
