@@ -1,7 +1,6 @@
-# QUOT-42 / M4 产品化：实现报告
+# M4 产品化：实现报告
 
 - 日期：2026-10-23
-- 分支：`agent/QUOT-42-m4`
 - 关联规格：[`docs/DEPLOYMENT.md`](../../DEPLOYMENT.md)、[`docs/CONFIG.md`](../../CONFIG.md)
 - 决策记录：[0005 多用户目录与 API 鉴权默认值](../../decisions/0005-multiuser-and-api-auth.md)、[0006 容器发布面与调度重试策略](../../decisions/0006-docker-loopback-and-scheduler-retry.md)、[0007 请求身份绑定与写令牌](../../decisions/0007-request-identity-binding.md)（0007 取代 0005 第 3、8 条）
 

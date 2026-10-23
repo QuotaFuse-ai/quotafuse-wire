@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from qf_wire.core.cleaner import clean_items
-from qf_wire.core.cluster import build_events
+from qf_wire.core.cluster import ClusterSettings, build_events
 from qf_wire.core.deduper import dedupe
 from qf_wire.core.models import Event, SourceItem
 from qf_wire.logging.setup import get_logger
@@ -46,12 +46,13 @@ def process_items(
     *,
     now: datetime | None = None,
     max_age_days: int = 30,
+    cluster: ClusterSettings | None = None,
 ) -> ProcessResult:
     """清洗 → 去重 → 事件聚合。"""
     raw = collect_items(results)
     cleaned = clean_items(raw, now=now, max_age_days=max_age_days)
     unique = dedupe(cleaned)
-    events = build_events(unique)
+    events = build_events(unique, settings=cluster)
     dropped = len(raw) - len(unique)
     if dropped > 0:
         logger.info("清洗去重：原始 %d 条，保留 %d 条（丢弃 %d）", len(raw), len(unique), dropped)

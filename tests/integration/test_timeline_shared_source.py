@@ -1,6 +1,6 @@
 """R3.3 回归：同一信源被多个赛道引用时，事件时间线不应丢失。
 
-QUOT-43 实测：信源被赛道 A、B 共用时，`pipeline.process` 会就地改写
+回归实测：信源被赛道 A、B 共用时，`pipeline.process` 会就地改写
 `SourceItem.topic` / `SourceItem.event_id`，后处理的赛道覆盖前一赛道；
 items 表按 (day, url) upsert，最终只保留后一赛道的 event_id，
 前一赛道的事件存在但 `event_timeline()` 为空。

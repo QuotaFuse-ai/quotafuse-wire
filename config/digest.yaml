@@ -56,3 +56,12 @@ digest:
     default:
       prompt_file: prompts/default.md
       output_schema: TopicDigest
+
+# 事件聚类阈值（同一赛道内多条报道折叠为同一事件）。
+# 调高 similarity_threshold 更保守（更少归并），调低更激进；window_hours 是回溯窗口。
+cluster:
+  similarity_threshold: 0.56
+  simhash_threshold: 0.86
+  simhash_floor: 0.30
+  entity_boost: 0.08
+  window_hours: 168

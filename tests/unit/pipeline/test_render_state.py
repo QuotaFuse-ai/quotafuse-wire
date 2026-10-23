@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 
 from qf_wire.config.loader import DigestSettings
-from qf_wire.core.models import Topic, TopicDigest
+from qf_wire.core.models import Event, EventExplanation, SourceItem, Topic, TopicDigest
 from qf_wire.pipeline.digest import _resolve_model
 from qf_wire.pipeline.render import build_dashboard_payload
 
@@ -58,3 +58,37 @@ def test_resolve_model_falls_back_to_default() -> None:
     assert _resolve_model(settings, {"model": "user-model"}) == "deepseek-chat"
     assert _resolve_model(settings, {"model": "semi-model"}) == "semi-model"
     assert _resolve_model(DigestSettings(default_model="user-model"), {}) is None
+
+
+def test_event_explanations_are_projected_for_the_dashboard() -> None:
+    item = SourceItem(
+        title="TSMC expands 2nm capacity",
+        url="https://example.com/1",
+        source_id="feed_a",
+        topic="ai",
+        event_id="evt-1",
+        sources=["feed_a"],
+    )
+    event = Event(
+        event_id="evt-1",
+        topic="ai",
+        title=item.title,
+        items=[item],
+        sources=["feed_a", "feed_b"],
+        source_count=2,
+        confidence="high",
+        explanation=EventExplanation(
+            reason="shared_entity",
+            shared_entities=["tsmc"],
+            title_similarity=0.7,
+        ),
+    )
+    payload = build_dashboard_payload(
+        [TOPIC], {"ai": [item]}, events_by_topic={"ai": [event]}
+    )
+
+    industry = payload["industries"][0]
+    explanation = industry["event_explanations"]["evt-1"]
+    assert explanation["reason"] == "shared_entity"
+    assert "共同实体：tsmc" in explanation["summary"]
+    assert industry["items"][0]["source_count"] == 2

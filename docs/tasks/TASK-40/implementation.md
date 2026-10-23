@@ -1,7 +1,6 @@
-# QUOT-40 / M2 采集与分析深度：实现报告
+# M2 采集与分析深度：实现报告
 
 - 日期：2026-10-22
-- 分支：`agent/QUOT-40-m2`
 - 基线：M1 合并后的 `5dfea07`
 - 关联规格：[`docs/specs/analysis-pipeline.md`](../../specs/analysis-pipeline.md)
 - 决策记录：[0001 并发](../../decisions/0001-async-fetch-concurrency.md)、[0002 聚类](../../decisions/0002-event-clustering.md)、[0003 评分](../../decisions/0003-source-scoring.md)

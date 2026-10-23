@@ -1,4 +1,4 @@
-# QUOT-46 跨日重复采集导致旧日事件迁移
+# 跨日重复采集导致旧日事件迁移
 
 ## 现象
 
@@ -14,7 +14,7 @@
 
 `event_id` 由 `stable_hash("event", topic, title_fingerprint | canonical_url)` 生成，不含日期；同一批条目在次日重新聚类会得到相同 `event_id`。而 `events` 表主键只有 `event_id`，`record_run` 的 upsert 又带 `ON CONFLICT(event_id) DO UPDATE SET day=excluded.day`，于是次日采集直接把旧日事件行改写成当天日期，旧日 items 的 `event_id` 就“悬空”指到了别的日期。
 
-`items` 表在 QUOT-43 已改为 `(topic, day, url)` 唯一键，本身没有丢失，问题完全出在 `events` 的存储粒度。
+`items` 表在多日采集改造中已改为 `(topic, day, url)` 唯一键，本身没有丢失，问题完全出在 `events` 的存储粒度。
 
 ## 修复
 

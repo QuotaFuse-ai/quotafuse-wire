@@ -1,8 +1,8 @@
-# QUOT-44 / 安全边界审计报告
+# 安全边界审计报告
 
 - 日期：2026-10-23
-- 关联 issue：QUOT-44（父 issue QUOT-39 第 6 阶段）
-- 审计分支：`agent/QUOT-44-security`（基线 `adaeed8`）
+- 关联任务：安全边界审计（父任务第 6 阶段）
+- 基线：`adaeed8`
 - 被测版本：`quota-fuse-wire` 0.1.0（`qfw` CLI / `qf_wire`）
 - 审计范围：M1 Docker、M2 只读 API、M3 多用户、M4 MCP、配置迁移；对齐 `docs/REQUIREMENTS_v1.0.txt` 安全条款与第 13 章验证要求、`docs/DEPLOYMENT.md` 安全默认段
 - 方法：白盒读码定位 + 本机黑盒 PoC 复现。所有 PoC 只对 `127.0.0.1` 上临时启动的被测进程或脚本自带桩服务发请求，不访问任何外部目标；金丝雀密钥均由脚本随机生成
@@ -303,7 +303,7 @@ python tests/security/poc_multiuser_isolation.py
 
 **位置**：`src/qf_wire/web/server.py:256-343,561-567`
 
-**问题**：`/api/history` 已在 QUOT-43 修复为 400，但 `/api/digest`、`/api/sources`、`/api/events` 仍经 `_resolve_day` 把非法日期吞成 `None`，返回 404“无数据”，语义误导。
+**问题**：`/api/history` 已在缺陷修复中改为 400，但 `/api/digest`、`/api/sources`、`/api/events` 仍经 `_resolve_day` 把非法日期吞成 `None`，返回 404“无数据”，语义误导。
 
 **修复建议**：统一在入口校验 `date`，非法返回 400。
 
