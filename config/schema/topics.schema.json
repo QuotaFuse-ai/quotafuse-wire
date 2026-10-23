@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://quotafuse.ai/schema/topics.schema.json",
+  "$id": "https://raw.githubusercontent.com/QuotaFuse-ai/quotafuse-wire/main/config/schema/topics.schema.json",
   "title": "QuotaFuse Wire topics config",
   "type": "object",
   "required": ["version", "topics"],
