@@ -5,12 +5,16 @@ import json
 import threading
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from qf_wire.config.loader import load_config
+from qf_wire.core.models import Event, SourceItem
+from qf_wire.sources.base import FetchResult
+from qf_wire.storage.sqlite import WireStore
 from qf_wire.web.server import create_server
 from tests.fixtures.configs import DEFAULT_DIGEST, write_config
 
@@ -217,8 +221,12 @@ def test_token_required_when_forced_on_loopback(dashboard, monkeypatch: pytest.M
     assert status == 200
     assert body["provider"] == "claude-cli"
 
+    # 强制鉴权时 health 也必须在鉴权之后
     status, _ = _request(base, "/api/health")
+    assert status == 401
+    status, body = _request(base, "/api/health", headers={"Authorization": "Bearer s3cret"})
     assert status == 200
+    assert body["status"] == "ok"
 
 
 def test_token_not_required_for_local_browser(dashboard, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -319,3 +327,191 @@ def test_history_invalid_date_returns_400(dashboard) -> None:
 
     assert status == 400
     assert "date" in body.get("error", "").lower() or "日期" in body.get("error", "")
+
+
+# ---- 只读 API：状态、事件检索与多用户隔离 ----
+def _event(event_id: str, title: str, *, source_id: str = "feed_a") -> Event:
+    now = datetime.now(timezone.utc)
+    item = SourceItem(
+        title=title,
+        url=f"https://example.com/{event_id}",
+        source_id=source_id,
+        topic="semi",
+        summary=title,
+        zh="",
+        published_at=now,
+        sources=[source_id],
+        event_id=event_id,
+        confidence="high",
+    )
+    return Event(
+        event_id=event_id,
+        topic="semi",
+        title=title,
+        items=[item],
+        sources=[source_id],
+        source_count=1,
+        confidence="high",
+        first_seen=now,
+        last_seen=now,
+    )
+
+
+def _seed_db(
+    db_path: Path,
+    *,
+    run_id: str,
+    events: list[Event],
+    results: list[FetchResult] | None = None,
+) -> None:
+    now = datetime.now(timezone.utc)
+    store = WireStore(db_path)
+    store.initialize()
+    try:
+        store.record_run(
+            run_id=run_id,
+            day=now.date(),
+            topic=None,
+            mode="all",
+            status="ok",
+            exit_code=0,
+            started_at=now,
+            finished_at=now,
+            results=results or [],
+            items_by_topic={"semi": [item for event in events for item in event.items]},
+            events_by_topic={"semi": events},
+        )
+    finally:
+        store.close()
+
+
+def test_status_cold_start(dashboard) -> None:
+    base, _, _ = dashboard
+
+    status, body = _request(base, "/api/status")
+
+    assert status == 200
+    assert body["lastRun"] is None
+    assert body["sources"] == []
+    assert body["degradedSources"] == []
+    assert body["archiveDays"] == 0
+
+
+def test_status_reports_last_run_and_degraded(dashboard) -> None:
+    base, config, tmp_path = dashboard
+    results = [
+        FetchResult(source_id="feed_a", source_name="Feed A", topic="semi", status="ok"),
+        FetchResult(
+            source_id="feed_b",
+            source_name="Feed B",
+            topic="semi",
+            status="unavailable",
+            error="HTTP 503",
+        ),
+    ]
+    _seed_db(config.paths.db_path, run_id="run-1", events=[_event("evt-status", "Chip news")], results=results)
+    archive = tmp_path / "data" / "archive" / "2026-10-23"
+    archive.mkdir(parents=True)
+    (archive / "manifest.json").write_text("{}", encoding="utf-8")
+
+    status, body = _request(base, "/api/status")
+
+    assert status == 200
+    assert body["lastRun"]["runId"] == "run-1"
+    assert body["lastRun"]["sourceTotal"] == 2
+    assert body["sourceDate"]
+    assert {row["source_id"] for row in body["sources"]} == {"feed_a", "feed_b"}
+    assert [item["sourceId"] for item in body["degradedSources"]] == ["feed_b"]
+    assert body["degradedSources"][0]["error"] == "HTTP 503"
+    assert body["archiveDays"] == 1
+
+
+def test_events_keyword_and_window(dashboard) -> None:
+    base, config, _ = dashboard
+    _seed_db(
+        config.paths.db_path,
+        run_id="run-2",
+        events=[
+            _event("evt-packaging", "Advanced packaging demand surges"),
+            _event("evt-earnings", "Unrelated earnings report"),
+        ],
+    )
+
+    status, body = _request(base, "/api/events?keyword=packaging&window=7d")
+    assert status == 200
+    assert [event["event_id"] for event in body["events"]] == ["evt-packaging"]
+    assert body["keyword"] == "packaging"
+    assert body["window"] == "7d"
+
+    status, body = _request(base, "/api/events?keyword=packaging&window=7d&topic=semi")
+    assert status == 200
+    assert body["topic"] == "semi"
+    assert len(body["events"]) == 1
+
+    status, body = _request(base, "/api/events?keyword=packaging&window=7d&topic=unknown")
+    assert status == 200
+    assert body["events"] == []
+
+    status, body = _request(base, "/api/events?keyword=packaging&window=oops")
+    assert status == 400
+    assert "window" in body["error"]
+
+
+def test_event_detail_by_path(dashboard) -> None:
+    base, config, _ = dashboard
+    _seed_db(config.paths.db_path, run_id="run-3", events=[_event("evt-detail", "Detail event")])
+
+    status, body = _request(base, "/api/events/evt-detail")
+    assert status == 200
+    assert body["event"]["event_id"] == "evt-detail"
+    assert [item["title"] for item in body["timeline"]] == ["Detail event"]
+
+    status, body = _request(base, "/api/events/missing")
+    assert status == 404
+    assert "不存在" in body["error"]
+
+
+def test_multiuser_db_isolation(dashboard, monkeypatch: pytest.MonkeyPatch) -> None:
+    base, config, _ = dashboard
+    monkeypatch.setenv("QF_WIRE_MULTIUSER", "true")
+    users_dir = config.paths.base_data_dir / "users"
+    alice = users_dir / "alice"
+    bob = users_dir / "bob"
+    alice.mkdir(parents=True)
+    bob.mkdir(parents=True)
+    _seed_db(alice / "wire.db", run_id="alice-run", events=[_event("alice-evt", "Alice chip news")])
+    _seed_db(bob / "wire.db", run_id="bob-run", events=[_event("bob-evt", "Bob chip news")])
+
+    status, _ = _request(base, "/api/events/alice-evt", headers={"X-QF-User": "alice"})
+    assert status == 200
+    status, _ = _request(base, "/api/events/alice-evt", headers={"X-QF-User": "bob"})
+    assert status == 404
+    status, _ = _request(base, "/api/events/bob-evt", headers={"X-QF-User": "bob"})
+    assert status == 200
+    status, _ = _request(base, "/api/events/bob-evt", headers={"X-QF-User": "alice"})
+    assert status == 404
+
+    _, alice_status = _request(base, "/api/status", headers={"X-QF-User": "alice"})
+    _, bob_status = _request(base, "/api/status", headers={"X-QF-User": "bob"})
+    assert alice_status["lastRun"]["runId"] == "alice-run"
+    assert bob_status["lastRun"]["runId"] == "bob-run"
+
+
+def test_multiuser_config_error_does_not_leak_paths(
+    dashboard, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base, config, tmp_path = dashboard
+    monkeypatch.setenv("QF_WIRE_MULTIUSER", "true")
+    user_config = config.paths.base_data_dir / "users" / "alice" / "config"
+    user_config.mkdir(parents=True)
+    for name in ("sources.yaml", "digest.yaml", "schedule.yaml"):
+        (user_config / name).write_bytes((config.paths.config_dir / name).read_bytes())
+    (user_config / "topics.yaml").write_text("topics: [unclosed\n", encoding="utf-8")
+
+    status, body = _request(base, "/api/status", headers={"X-QF-User": "alice"})
+
+    assert status == 400
+    error = body["error"]
+    assert str(tmp_path) not in error
+    assert str(user_config) not in error
+    assert "<path>" in error
