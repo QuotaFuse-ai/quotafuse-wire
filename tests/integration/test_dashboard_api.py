@@ -572,20 +572,25 @@ def test_multiuser_db_isolation(dashboard, monkeypatch: pytest.MonkeyPatch) -> N
     bob = users_dir / "bob"
     alice.mkdir(parents=True)
     bob.mkdir(parents=True)
+    (alice / "api.token").write_text("alice-token\n", encoding="utf-8")
+    (bob / "api.token").write_text("bob-token\n", encoding="utf-8")
     _seed_db(alice / "wire.db", run_id="alice-run", events=[_event("alice-evt", "Alice chip news")])
     _seed_db(bob / "wire.db", run_id="bob-run", events=[_event("bob-evt", "Bob chip news")])
 
-    status, _ = _request(base, "/api/events/alice-evt", headers={"X-QF-User": "alice"})
+    alice_headers = {"X-QF-User": "alice", "X-QF-User-Token": "alice-token"}
+    bob_headers = {"X-QF-User": "bob", "X-QF-User-Token": "bob-token"}
+
+    status, _ = _request(base, "/api/events/alice-evt", headers=alice_headers)
     assert status == 200
-    status, _ = _request(base, "/api/events/alice-evt", headers={"X-QF-User": "bob"})
+    status, _ = _request(base, "/api/events/alice-evt", headers=bob_headers)
     assert status == 404
-    status, _ = _request(base, "/api/events/bob-evt", headers={"X-QF-User": "bob"})
+    status, _ = _request(base, "/api/events/bob-evt", headers=bob_headers)
     assert status == 200
-    status, _ = _request(base, "/api/events/bob-evt", headers={"X-QF-User": "alice"})
+    status, _ = _request(base, "/api/events/bob-evt", headers=alice_headers)
     assert status == 404
 
-    _, alice_status = _request(base, "/api/status", headers={"X-QF-User": "alice"})
-    _, bob_status = _request(base, "/api/status", headers={"X-QF-User": "bob"})
+    _, alice_status = _request(base, "/api/status", headers=alice_headers)
+    _, bob_status = _request(base, "/api/status", headers=bob_headers)
     assert alice_status["lastRun"]["runId"] == "alice-run"
     assert bob_status["lastRun"]["runId"] == "bob-run"
 
@@ -595,13 +600,19 @@ def test_multiuser_config_error_does_not_leak_paths(
 ) -> None:
     base, config, tmp_path = dashboard
     monkeypatch.setenv("QF_WIRE_MULTIUSER", "true")
-    user_config = config.paths.base_data_dir / "users" / "alice" / "config"
+    alice = config.paths.base_data_dir / "users" / "alice"
+    user_config = alice / "config"
     user_config.mkdir(parents=True)
+    (alice / "api.token").write_text("alice-token\n", encoding="utf-8")
     for name in ("sources.yaml", "digest.yaml", "schedule.yaml"):
         (user_config / name).write_bytes((config.paths.config_dir / name).read_bytes())
     (user_config / "topics.yaml").write_text("topics: [unclosed\n", encoding="utf-8")
 
-    status, body = _request(base, "/api/status", headers={"X-QF-User": "alice"})
+    status, body = _request(
+        base,
+        "/api/status",
+        headers={"X-QF-User": "alice", "X-QF-User-Token": "alice-token"},
+    )
 
     assert status == 400
     error = body["error"]
