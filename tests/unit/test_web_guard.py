@@ -117,3 +117,17 @@ def test_bearer_scheme_is_case_insensitive(clean_env) -> None:
 def test_cors_origins_are_parsed(clean_env) -> None:
     clean_env.setenv("QF_WIRE_CORS_ORIGINS", "https://a.example, https://b.example/")
     assert web_server._cors_origins() == {"https://a.example", "https://b.example"}
+
+
+def test_error_redaction_hides_paths_and_secrets(clean_env) -> None:
+    clean_env.setenv("QF_WIRE_API_TOKEN", "s3cret-token-value")
+
+    text = web_server._redact(
+        "无法读取 /home/alice/wire/config/topics.yaml: token=s3cret-token-value "
+        r"或 C:\Users\bob\wire\data\wire.db"
+    )
+
+    assert "/home/alice" not in text
+    assert "C:\\Users" not in text
+    assert "s3cret-token-value" not in text
+    assert text.count("<path>") == 2
