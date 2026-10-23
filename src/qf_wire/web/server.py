@@ -210,7 +210,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/status":
             self._api_status()
         elif path.startswith("/api/events/"):
-            self._api_event_by_id(unquote(path[len("/api/events/"):]))
+            self._api_event_by_id(unquote(path[len("/api/events/"):]), query)
         elif path == "/api/events":
             self._api_events(query)
         elif path == "/api/event":
@@ -445,25 +445,34 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not event_id:
             self._send_json({"error": "缺少 id"}, HTTPStatus.BAD_REQUEST)
             return
-        self._send_event(event_id)
+        self._send_event(event_id, query.get("date"))
 
-    def _api_event_by_id(self, event_id: str) -> None:
+    def _api_event_by_id(
+        self, event_id: str, query: dict[str, str] | None = None
+    ) -> None:
         event_id = (event_id or "").strip()
         if not event_id:
             self._send_json({"error": "缺少事件 id"}, HTTPStatus.BAD_REQUEST)
             return
-        self._send_event(event_id)
+        self._send_event(event_id, (query or {}).get("date"))
 
-    def _send_event(self, event_id: str) -> None:
+    def _send_event(self, event_id: str, raw_day: str | None = None) -> None:
+        day = raw_day or None
+        if day:
+            try:
+                day = date.fromisoformat(day).isoformat()
+            except ValueError:
+                self._send_json({"error": "date 格式应为 YYYY-MM-DD"}, HTTPStatus.BAD_REQUEST)
+                return
         store = self._open_store()
         if store is None:
             return
         try:
-            event = store.get_event(event_id)
+            event = store.get_event(event_id, day)
             if event is None:
                 self._send_json({"error": "事件不存在"}, HTTPStatus.NOT_FOUND)
                 return
-            timeline = store.event_timeline(event_id)
+            timeline = store.event_timeline(event_id, day)
             self._send_json(
                 {
                     "event": event.model_dump(mode="json"),
