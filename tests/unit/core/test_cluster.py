@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from qf_wire.core.cluster import (
+    ClusterSettings,
     build_events,
     cluster_items,
     extract_entities,
@@ -104,3 +107,61 @@ def test_reports_outside_window_stay_separate() -> None:
 
     groups = cluster_items([early, late])
     assert len(groups) == 2
+
+
+def test_cluster_settings_from_mapping_overrides_and_validates() -> None:
+    settings = ClusterSettings.from_mapping(
+        {"similarity_threshold": 0.42, "entity_boost": 0.1, "window_hours": 12}
+    )
+    assert settings.similarity_threshold == 0.42
+    assert settings.entity_boost == 0.1
+    assert settings.window_hours == 12
+    assert settings.simhash_threshold == ClusterSettings().simhash_threshold
+
+    with pytest.raises(ValueError):
+        ClusterSettings.from_mapping({"similarity_threshold": 1.5})
+    with pytest.raises(ValueError):
+        ClusterSettings.from_mapping({"window_hours": 0})
+    with pytest.raises(ValueError):
+        ClusterSettings.from_mapping({"unknown_field": 1})
+
+
+def test_configured_threshold_changes_clustering() -> None:
+    items = _same_event_items()
+    strict = ClusterSettings(similarity_threshold=1.0, simhash_threshold=1.0)
+
+    assert len({event.title for event in build_events(items, settings=strict)}) == len(items)
+    assert len(build_events(items)) == 1
+
+
+def test_build_events_records_why_reports_were_merged() -> None:
+    event = build_events(_same_event_items())[0]
+    explanation = event.explanation
+
+    assert explanation is not None
+    assert explanation.reason == "title_similarity"
+    assert "tsmc" in explanation.shared_entities
+    assert explanation.title_similarity > 0.7
+    assert explanation.window_hours == ClusterSettings().window_hours
+    assert "共同实体：tsmc" in explanation.summary()
+    assert "标题相似度" in explanation.summary()
+
+
+def test_duplicate_url_is_explained_as_repost() -> None:
+    original = _item("feed_a", "TSMC starts mass production of 2nm chips")
+    repost = original.model_copy(update={"source_id": "feed_b", "sources": ["feed_b"]})
+
+    events = build_events([original, repost])
+
+    assert len(events) == 1
+    assert events[0].explanation is not None
+    assert events[0].explanation.reason == "duplicate"
+    assert events[0].explanation.summary() == "同链接或同标题转载"
+
+
+def test_single_report_is_not_explained_as_merge() -> None:
+    event = build_events([_item("feed_a", UNRELATED_TITLES[0])])[0]
+
+    assert event.explanation is not None
+    assert event.explanation.reason == "single"
+    assert event.explanation.summary() == "单篇报道"

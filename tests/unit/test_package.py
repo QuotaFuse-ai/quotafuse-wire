@@ -1,6 +1,6 @@
 """打包回归：wheel 必须携带运行期依赖的数据文件。
 
-QUOT-43 实测 wheel 只包含 `qf_wire/web/static/*`，导致干净安装后：
+回归实测 wheel 只包含 `qf_wire/web/static/*`，导致干净安装后：
 - `storage/migrations/*.sql` 缺失 → run 报 `no such table: source_scores`；
 - `config/schema/*.schema.json` 在包外 → config validate 报缺少 schema；
 - `prompts/*.md` 未打包 → 提炼无法读取提示词。

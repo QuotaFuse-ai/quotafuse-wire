@@ -69,6 +69,28 @@ digest:
 | `model` | 传给 provider 的模型名；`claude-cli` 会原样转发为 `--model`。`user-model` 是占位符，表示“用 CLI/接口自己的默认模型”，不会转发 |
 | `output_schema` | `TopicDigest`（摘要 + 要点 + 条目）或 `BriefDigest`（摘要 + 要点，条目由本地数据补齐） |
 
+## 事件聚类
+
+`digest.yaml` 顶层的 `cluster` 段控制同一赛道内多条报道折叠为同一事件的阈值；整段可省略，省略时使用下列默认值。
+
+```yaml
+cluster:
+  similarity_threshold: 0.56   # 标题字符 bigram 余弦
+  simhash_threshold: 0.86      # 64 位 SimHash 相似度
+  simhash_floor: 0.30          # SimHash 放行时要求的最低余弦
+  entity_boost: 0.08           # 共享实体对相似度的加分
+  window_hours: 168            # 回溯窗口（小时）
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `similarity_threshold` | 调高更保守（更少归并），调低更激进 |
+| `simhash_threshold` / `simhash_floor` | 长标题局部改动时的补充判定；两者需同时满足 |
+| `entity_boost` | 共同实体存在时的相似度加分，不能为负 |
+| `window_hours` | 只在窗口内比较，避免历史事件被反复吸附 |
+
+归并结果会记录依据（共同实体 / 标题相似度 / SimHash / 同链接转载），在 `qfw event show` 与看板事件时间线中展示。未知字段或越界数值会让配置校验失败。
+
 ## 并发采集
 
 全局并发度由环境变量 `QF_WIRE_FETCH_CONCURRENCY` 控制（默认 24，范围 1..64；`qfw run --max-workers` 可临时覆盖）。

@@ -1,11 +1,14 @@
-"""配置加载单元测试：赛道别名、信源查询、缺失文件。"""
+"""配置加载单元测试：赛道别名、信源查询、缺失文件、聚类阈值。"""
 from __future__ import annotations
+
+from copy import deepcopy
 
 import pytest
 
 from qf_wire.config.loader import load_config
+from qf_wire.core.cluster import ClusterSettings
 from qf_wire.core.errors import ConfigError
-from tests.fixtures.configs import write_config
+from tests.fixtures.configs import DEFAULT_DIGEST, write_config
 
 
 def test_load_config_and_resolve_alias(tmp_path) -> None:
@@ -17,6 +20,7 @@ def test_load_config_and_resolve_alias(tmp_path) -> None:
     assert topic.name == "半导体"
     assert [source.id for source in config.sources_for(topic)] == ["feed_a"]
     assert config.find_topic("missing") is None
+    assert config.cluster == ClusterSettings()
 
 
 def test_load_config_missing_yaml_raises(tmp_path) -> None:
@@ -39,6 +43,25 @@ def test_load_config_rejects_dangling_source(tmp_path) -> None:
     config_dir = write_config(tmp_path, topics=topics)
 
     with pytest.raises(ConfigError):
+        load_config(config_dir=config_dir)
+
+
+def test_load_config_reads_cluster_settings(tmp_path) -> None:
+    digest = deepcopy(DEFAULT_DIGEST)
+    digest["cluster"] = {"similarity_threshold": 0.42, "window_hours": 12}
+    config = load_config(config_dir=write_config(tmp_path, digest=digest))
+
+    assert config.cluster.similarity_threshold == 0.42
+    assert config.cluster.window_hours == 12
+    assert config.cluster.simhash_threshold == ClusterSettings().simhash_threshold
+
+
+def test_load_config_rejects_invalid_cluster_settings(tmp_path) -> None:
+    digest = deepcopy(DEFAULT_DIGEST)
+    digest["cluster"] = {"similarity_threshold": 1.4}
+    config_dir = write_config(tmp_path, digest=digest)
+
+    with pytest.raises(ConfigError, match="cluster"):
         load_config(config_dir=config_dir)
 
 

@@ -141,7 +141,7 @@ def run(config: WireConfig, options: RunOptions) -> RunResult:
             for result in results
             if result.source_id in topic.sources
         ]
-        processed = process_items(topic_results)
+        processed = process_items(topic_results, cluster=config.cluster)
         items = sort_items(processed.items)
         items_by_topic[topic.id] = items
         events_by_topic[topic.id] = processed.events

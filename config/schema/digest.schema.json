@@ -44,6 +44,17 @@
           }
         }
       }
+    },
+    "cluster": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "similarity_threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "simhash_threshold": { "type": "number", "minimum": 0, "maximum": 1 },
+        "simhash_floor": { "type": "number", "minimum": 0, "maximum": 1 },
+        "entity_boost": { "type": "number", "minimum": 0, "maximum": 1 },
+        "window_hours": { "type": "integer", "minimum": 1, "maximum": 2160 }
+      }
     }
   }
 }
