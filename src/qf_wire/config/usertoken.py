@@ -1,7 +1,7 @@
 """多用户 API 凭据：每个用户一份随机 token，存放在其数据目录下。
 
 `X-QF-User` 只负责选择用户，不能单独作为身份；多用户共享实例上切换用户
-必须同时出示目标用户的 token（见 docs/decisions/0006）。
+必须同时出示目标用户的 token。
 """
 from __future__ import annotations
 
