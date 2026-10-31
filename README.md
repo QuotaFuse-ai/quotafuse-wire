@@ -274,7 +274,6 @@ quotafuse-wire/
 - [Provider 接口与外部集成](docs/PROVIDER_INTEGRATION.md)
 - [配置迁移指南](docs/MIGRATION.md)
 - [部署](docs/DEPLOYMENT.md)
-- [需求追踪矩阵](docs/REQUIREMENTS_TRACEABILITY.md)
 
 ## 边界
 
