@@ -44,7 +44,7 @@ WRITE_TOKEN_HEADER = "X-QF-Write-Token"
 USER_HEADER = "X-QF-User"
 USER_TOKEN_HEADER = "X-QF-User-Token"
 LOOPBACK = frozenset({"127.0.0.1", "::1", "::ffff:127.0.0.1", "localhost"})
-PUBLIC_PATHS = frozenset({"/api/health"})
+PUBLIC_PATHS = frozenset({"/api/health", "/healthz"})
 
 
 def _env_flag(name: str) -> bool:
@@ -200,17 +200,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_bytes(b"", "image/x-icon", HTTPStatus.NO_CONTENT)
         elif path == "/data.js":
             self._serve_data_js()
-        elif path == "/api/health":
+        elif path in {"/api/health", "/healthz"}:
             # 补 service / version 供同机下游判断「装的是不是最新版」（QUOT-401）。
-            # 注意路径是 /api/health，不是别的服务惯用的 /healthz。
-            self._send_json(
-                {
-                    "status": "ok",
-                    "service": "quotafuse-wire",
-                    "version": __version__,
-                    "generatedAt": datetime.now().astimezone().isoformat(),
-                }
-            )
+            # /healthz 与另外三个模块同名同形状（无 generatedAt），/api/health 保留原字段。
+            body: dict[str, Any] = {
+                "status": "ok",
+                "service": "quotafuse-wire",
+                "version": __version__,
+            }
+            if path == "/api/health":
+                body["generatedAt"] = datetime.now().astimezone().isoformat()
+            self._send_json(body)
         elif path == "/api/digest":
             self._api_digest(query)
         elif path == "/api/sources":

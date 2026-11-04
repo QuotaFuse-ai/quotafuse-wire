@@ -251,6 +251,24 @@ def test_token_required_when_forced_on_loopback(dashboard, monkeypatch: pytest.M
     assert body["status"] == "ok"
 
 
+def test_healthz_reports_service_and_version(dashboard) -> None:
+    """QUOT-401：/healthz 与另外三个模块同形状；/api/health 保留 generatedAt。"""
+    from qf_wire import __version__
+
+    base, _, _ = dashboard
+
+    status, body = _request(base, "/healthz")
+    assert status == 200
+    assert body == {"status": "ok", "service": "quotafuse-wire", "version": __version__}
+
+    status, body = _request(base, "/api/health")
+    assert status == 200
+    assert body["status"] == "ok"
+    assert body["service"] == "quotafuse-wire"
+    assert body["version"] == __version__
+    assert "generatedAt" in body
+
+
 def test_token_not_required_for_local_browser(dashboard, monkeypatch: pytest.MonkeyPatch) -> None:
     base, _, _ = dashboard
     monkeypatch.setenv("QF_WIRE_API_TOKEN", "s3cret")
