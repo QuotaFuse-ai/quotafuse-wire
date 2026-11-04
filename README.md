@@ -41,6 +41,26 @@ QuotaFuse Wire 是为 A股投资者打造的全球产业链资讯看板。半导
 
 **边界**：Wire 呈现的是行业动向与领先信号，并非行情数据，更不构成投资建议。Industry trends, not financial advice.
 
+## 打包、版本与健康检查
+
+- **版本唯一真源**：`pyproject.toml` 的 `[project] version`。代码里的 `__version__` 用
+  `importlib.metadata.version("quota-fuse-wire")` 读安装元数据，不再手写第二份。
+- **最小包**：`bash scripts/build-release.sh` 产出 `dist-build/*.whl` + `dist-build/SHA256SUMS`。
+  GitHub Release 只挂这两个附件（不挂源码 zip），tag 与版本一致：`v<version>`。
+- **安装方式**：peer 的 venv 用 `pip install -e .`（改源码即生效）或 `pip install <wheel>`；
+  **禁止**把源码复制进 `site-packages`（副本安装下改源码不生效）。
+- **健康检查**：`GET /healthz` 返回 `{"status":"ok","service":"quota-fuse-wire","version":"<x.y.z>"}`，
+  与 TickHub-CN / TickHub-US / StockSenate 同名同形状，同机下游据此判断「装的是不是最新版」：
+
+```bash
+curl -s http://127.0.0.1:8790/healthz
+# {"status":"ok","service":"quotafuse-wire","version":"0.1.1"}
+curl -s http://127.0.0.1:8790/api/health
+# 同样字段，另带 generatedAt
+```
+
+  强制鉴权（`QF_WIRE_API_REQUIRE_TOKEN=1`）时两者同样需要 Bearer。对端部署细节见 [docs/runbook-peer.md](docs/runbook-peer.md)。
+
 ## 核心能力
 
 | 能力 | 说明 |
