@@ -36,3 +36,4 @@ config/*.local.yaml
 Thumbs.db
 .idea/
 .vscode/
+dist-build/

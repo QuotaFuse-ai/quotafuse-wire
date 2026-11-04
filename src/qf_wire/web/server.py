@@ -43,7 +43,16 @@ WRITE_TOKEN_HEADER = "X-QF-Write-Token"
 USER_HEADER = "X-QF-User"
 USER_TOKEN_HEADER = "X-QF-User-Token"
 LOOPBACK = frozenset({"127.0.0.1", "::1", "::ffff:127.0.0.1", "localhost"})
-PUBLIC_PATHS = frozenset({"/api/health"})
+PUBLIC_PATHS = frozenset({"/api/health", "/healthz"})
+
+
+def _health_body(*, with_generated_at: bool) -> dict[str, Any]:
+    from qf_wire import __version__
+
+    body: dict[str, Any] = {"status": "ok", "service": "quota-fuse-wire", "version": __version__}
+    if with_generated_at:
+        body["generatedAt"] = datetime.now().astimezone().isoformat()
+    return body
 
 
 def _env_flag(name: str) -> bool:
@@ -199,8 +208,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self._send_bytes(b"", "image/x-icon", HTTPStatus.NO_CONTENT)
         elif path == "/data.js":
             self._serve_data_js()
+        elif path == "/healthz":
+            self._send_json(_health_body(with_generated_at=False))
         elif path == "/api/health":
-            self._send_json({"status": "ok", "generatedAt": datetime.now().astimezone().isoformat()})
+            self._send_json(_health_body(with_generated_at=True))
         elif path == "/api/digest":
             self._api_digest(query)
         elif path == "/api/sources":
