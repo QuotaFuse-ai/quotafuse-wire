@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
+from qf_wire import __version__
 from qf_wire.config.ai import read_ai_settings, save_ai_settings
 from qf_wire.config.dotenv import LOCAL_FILENAME as LOCAL_ENV_NAME
 from qf_wire.config.loader import USER_ID_PATTERN, WireConfig, load_config, multiuser_enabled
@@ -200,7 +201,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/data.js":
             self._serve_data_js()
         elif path == "/api/health":
-            self._send_json({"status": "ok", "generatedAt": datetime.now().astimezone().isoformat()})
+            # 补 service / version 供同机下游判断「装的是不是最新版」（QUOT-401）。
+            # 注意路径是 /api/health，不是别的服务惯用的 /healthz。
+            self._send_json(
+                {
+                    "status": "ok",
+                    "service": "quotafuse-wire",
+                    "version": __version__,
+                    "generatedAt": datetime.now().astimezone().isoformat(),
+                }
+            )
         elif path == "/api/digest":
             self._api_digest(query)
         elif path == "/api/sources":
